@@ -1,4 +1,4 @@
-// app/api/jira/history/route.ts
+
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth'
 import { supabaseAdmin } from '@/lib/supabase-admin' 

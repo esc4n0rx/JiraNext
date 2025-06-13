@@ -1,11 +1,9 @@
-// app/api/jira/extract/route.ts
+
 import { NextRequest, NextResponse } from 'next/server'
 import { processJiraIssue, reorganizeData } from '@/lib/jira-utils'
 import { JiraIssue, ProcessedIssueData } from '@/types/jira'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
-
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
 
 export async function POST(request: NextRequest) {
   try {

@@ -1,3 +1,4 @@
+/* app/globals.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -55,5 +56,21 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+/* Adicionar classes para 3D */
+@layer utilities {
+  .perspective-1000 {
+    perspective: 1000px;
+  }
+  
+  .preserve-3d {
+    transform-style: preserve-3d;
+  }
+  
+  .transform-gpu {
+    transform-style: preserve-3d;
+    will-change: transform;
   }
 }

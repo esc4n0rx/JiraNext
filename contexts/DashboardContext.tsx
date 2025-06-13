@@ -43,7 +43,8 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   }
 
   const getReportData = async (reportId: string): Promise<ExtractedData[]> => {
-    const response = await fetch(`/api/dashboard/report/${reportId}`)
+    // Rota corrigida aqui
+    const response = await fetch(`/api/dashboard/reports/${reportId}`)
     if (!response.ok) throw new Error('Erro ao carregar dados do relatório')
     return response.json()
   }

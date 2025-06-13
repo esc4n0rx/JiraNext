@@ -21,16 +21,19 @@ import {
   Eye, 
   EyeOff,
   Save,
-  TestTube
+  TestTube,
+  Loader2
 } from 'lucide-react'
 import { toast } from 'sonner'
 
 export default function SettingsPanel() {
   const { theme, setTheme } = useTheme()
-  const { config, setConfig } = useConfig()
+  const { config, loading, saveConfig } = useConfig()
   const [showToken, setShowToken] = useState(false)
   const [formData, setFormData] = useState(config)
   const [hasChanges, setHasChanges] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
 
   useEffect(() => {
     setFormData(config)
@@ -41,10 +44,16 @@ export default function SettingsPanel() {
     setHasChanges(changed)
   }, [formData, config])
 
-  const handleSave = () => {
-    setConfig(formData)
-    toast.success('Configurações salvas com sucesso!')
-    setHasChanges(false)
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      await saveConfig(formData)
+      setHasChanges(false)
+    } catch (error) {
+      // Erro já tratado no hook
+    } finally {
+      setSaving(false)
+    }
   }
 
   const testConnection = async () => {
@@ -53,6 +62,7 @@ export default function SettingsPanel() {
       return
     }
 
+    setTesting(true)
     try {
       const response = await fetch('/api/jira/test', {
         method: 'POST',
@@ -64,14 +74,33 @@ export default function SettingsPanel() {
         })
       })
 
+      const data = await response.json()
+
       if (response.ok) {
-        toast.success('Conexão testada com sucesso!')
+        toast.success(`Conexão testada com sucesso! Logado como: ${data.user.displayName}`)
       } else {
-        toast.error('Falha na conexão com o Jira')
+        toast.error(data.error || 'Falha na conexão com o Jira')
       }
     } catch (error) {
       toast.error('Erro ao testar conexão')
+    } finally {
+      setTesting(false)
     }
+  }
+
+  if (loading) {
+    return (
+      <div className="w-full max-w-4xl mx-auto">
+        <Card className="border-0 shadow-xl">
+          <CardContent className="flex items-center justify-center p-12">
+            <div className="flex items-center space-x-3">
+              <Loader2 className="h-6 w-6 animate-spin" />
+              <span>Carregando configurações...</span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -171,10 +200,15 @@ export default function SettingsPanel() {
                     <Button
                       variant="outline"
                       onClick={testConnection}
+                      disabled={testing}
                       className="flex items-center"
                     >
-                      <TestTube className="h-4 w-4 mr-2" />
-                      Testar Conexão
+                      {testing ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <TestTube className="h-4 w-4 mr-2" />
+                      )}
+                      {testing ? 'Testando...' : 'Testar Conexão'}
                     </Button>
                   </div>
                 </div>
@@ -272,9 +306,13 @@ export default function SettingsPanel() {
                 animate={{ opacity: 1, y: 0 }}
                 className="flex justify-end mt-6 pt-6 border-t"
               >
-                <Button onClick={handleSave} className="flex items-center">
-                  <Save className="h-4 w-4 mr-2" />
-                  Salvar Alterações
+                <Button onClick={handleSave} disabled={saving} className="flex items-center">
+                  {saving ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4 mr-2" />
+                  )}
+                  {saving ? 'Salvando...' : 'Salvar Alterações'}
                 </Button>
               </motion.div>
             )}

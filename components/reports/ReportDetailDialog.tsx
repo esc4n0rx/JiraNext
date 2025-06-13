@@ -11,12 +11,20 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { DataTable } from '@/components/data-table'
 import { useDashboard } from '@/contexts/DashboardContext'
 import { ExtractedData } from '@/types/dashboard'
 import { Download, Search, Filter } from 'lucide-react'
 import { toast } from 'sonner'
 import { exportToExcel } from '@/lib/export-to-excel'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { ScrollArea } from '@/components/ui/scroll-area'
 
 interface ReportDetailDialogProps {
   reportId: string | null
@@ -73,29 +81,58 @@ export function ReportDetailDialog({ reportId, open, onOpenChange }: ReportDetai
     }
 
     try {
-      exportToExcel(
-        filteredData.map(item => ({
-          id: item.id ?? '',
-          key: item.LOG ?? '',
-          summary: "Chamados",
-          status: item.Status?? '',
-          assignee: item.Loja ?? '',
-          created: item['Data de Criação'] ?? '',
-          updated: item['Data de Criação'] ?? ''
-        })),
-        `relatorio-detalhado-${new Date().toISOString().split('T')[0]}`
-      )
+      // Usar exatamente a mesma estrutura do Excel
+      const excelData = filteredData.map(item => ({
+        LOG: item.LOG,
+        Status: item.Status,
+        'Data de Criação': item['Data de Criação'],
+        'Tipo de CD': item['Tipo de CD'],
+        'Tipo de Divergencia': item['Tipo de Divergencia'],
+        'Data de Recebimento': item['Data de Recebimento'],
+        Loja: item.Loja,
+        Categoria: item.Categoria,
+        Material: item.Material,
+        'Quantidade Cobrada': item['Quantidade Cobrada'],
+        'Quantidade Recebida': item['Quantidade Recebida'],
+        'Quantidade de KG cobrada': item['Quantidade de KG cobrada'],
+        'Quantidade de KG recebida': item['Quantidade de KG recebida']
+      }))
+
+      // Criar planilha
+      const XLSX = require('xlsx')
+      const worksheet = XLSX.utils.json_to_sheet(excelData)
+      const workbook = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Dados Jira')
+      
+      XLSX.writeFile(workbook, `relatorio-detalhado-${new Date().toISOString().split('T')[0]}.xlsx`)
       toast.success('Relatório exportado com sucesso!')
     } catch (error) {
       toast.error('Erro ao exportar relatório')
     }
   }
 
+  // Colunas exatamente como no Excel
+  const columns = [
+    { key: 'LOG', label: 'LOG' },
+    { key: 'Status', label: 'Status' },
+    { key: 'Data de Criação', label: 'Data de Criação' },
+    { key: 'Tipo de CD', label: 'Tipo de CD' },
+    { key: 'Tipo de Divergencia', label: 'Tipo de Divergencia' },
+    { key: 'Data de Recebimento', label: 'Data de Recebimento' },
+    { key: 'Loja', label: 'Loja' },
+    { key: 'Categoria', label: 'Categoria' },
+    { key: 'Material', label: 'Material' },
+    { key: 'Quantidade Cobrada', label: 'Quantidade Cobrada' },
+    { key: 'Quantidade Recebida', label: 'Quantidade Recebida' },
+    { key: 'Quantidade de KG cobrada', label: 'Quantidade de KG cobrada' },
+    { key: 'Quantidade de KG recebida', label: 'Quantidade de KG recebida' }
+  ]
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-7xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent className="max-w-[95vw] max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader className="flex flex-row items-center justify-between">
-          <DialogTitle>Detalhes do Relatório</DialogTitle>
+          <DialogTitle>Detalhes do Relatório - Visualização Excel</DialogTitle>
           <Button
             variant="outline"
             size="sm"
@@ -103,7 +140,7 @@ export function ReportDetailDialog({ reportId, open, onOpenChange }: ReportDetai
             disabled={filteredData.length === 0}
           >
             <Download className="mr-2 h-4 w-4" />
-            Exportar
+            Exportar Excel
           </Button>
         </DialogHeader>
 
@@ -129,8 +166,8 @@ export function ReportDetailDialog({ reportId, open, onOpenChange }: ReportDetai
             </div>
           </motion.div>
 
-          {/* Tabela */}
-          <div className="flex-1 overflow-hidden">
+          {/* Tabela - Exatamente como o Excel */}
+          <div className="flex-1 overflow-hidden border rounded-lg">
             {loading ? (
               <div className="flex items-center justify-center h-64">
                 <motion.div
@@ -140,18 +177,35 @@ export function ReportDetailDialog({ reportId, open, onOpenChange }: ReportDetai
                 />
               </div>
             ) : (
-              <DataTable
-                data={filteredData.map(item => ({
-                  id: item.id ?? '',
-                  key: item.LOG ?? '',
-                  summary: "Chamados",
-                  status: item.Status ?? '',
-                  assignee: item.Loja ?? '',
-                  created: item['Data de Criação'] ?? '',
-                  updated: item['Data de Criação'] ?? '',
-                  // add any other required JiraIssue fields here, using defaults or mapping as needed
-                }))}
-              />
+              <ScrollArea className="h-full w-full">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-background z-10">
+                    <TableRow>
+                      {columns.map((column) => (
+                        <TableHead key={column.key} className="whitespace-nowrap">
+                          {column.label}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredData.map((row, index) => (
+                      <TableRow key={index}>
+                        {columns.map((column) => (
+                          <TableCell key={column.key} className="whitespace-nowrap">
+                            {row[column.key as keyof ExtractedData] || '-'}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {filteredData.length === 0 && !loading && (
+                  <div className="text-center py-8 text-gray-500">
+                    {searchTerm ? 'Nenhum registro encontrado para o filtro aplicado' : 'Nenhum dado disponível'}
+                  </div>
+                )}
+              </ScrollArea>
             )}
           </div>
         </div>

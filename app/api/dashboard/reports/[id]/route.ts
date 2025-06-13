@@ -1,4 +1,4 @@
-// app/api/dashboard/report/[id]/route.ts
+// app/api/dashboard/reports/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 
@@ -20,6 +20,7 @@ export async function GET(
 
     // Converter para formato esperado pelo frontend
     const formattedData = extractionData.map(item => ({
+      id: item.id,
       LOG: item.log_key,
       Status: item.status || '',
       'Data de Criação': item.created_date || '',

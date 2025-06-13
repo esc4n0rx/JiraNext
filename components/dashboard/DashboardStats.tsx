@@ -13,7 +13,7 @@ import {
   Store,
   TrendingUp
 } from 'lucide-react'
-import { format } from 'date-fns'
+import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
 const StatCard = ({ 
@@ -66,6 +66,39 @@ const StatCard = ({
       </Card>
     </motion.div>
   )
+}
+
+// Função corrigida para formatar data
+const formatDateDisplay = (dateString: string): string => {
+  try {
+    // Se a data já está no formato brasileiro DD/MM/YYYY, retornar como está
+    if (dateString.includes('/') && dateString.split('/').length === 3) {
+      const parts = dateString.split('/')
+      // Verificar se já está no formato DD/MM/YYYY
+      if (parts[0].length <= 2) {
+        return dateString
+      }
+    }
+    
+    // Se é uma data ISO (YYYY-MM-DD ou YYYY-MM-DDTHH:mm:ss), converter
+    if (dateString.includes('-')) {
+      const date = parseISO(dateString)
+      if (!isNaN(date.getTime())) {
+        return format(date, 'MM/dd/yyyy', { locale: ptBR })
+      }
+    }
+    
+    // Tentar parse direto como último recurso
+    const directDate = new Date(dateString)
+    if (!isNaN(directDate.getTime())) {
+      return format(directDate, 'MM/dd/yyyy', { locale: ptBR })
+    }
+    
+    return dateString // Retornar original se não conseguir converter
+  } catch (error) {
+    console.error('Erro ao formatar data:', dateString, error)
+    return dateString
+  }
 }
 
 export default function DashboardStats() {
@@ -127,7 +160,7 @@ export default function DashboardStats() {
         value={dashboardData.chamadoMaisAntigo?.log || "N/A"}
         icon={Calendar}
         description={dashboardData.chamadoMaisAntigo ? 
-          format(new Date(dashboardData.chamadoMaisAntigo.dataCreation), 'dd/MM/yyyy', { locale: ptBR }) : 
+          formatDateDisplay(dashboardData.chamadoMaisAntigo.dataCreation) : 
           "Nenhum chamado"
         }
         delay={0.2}

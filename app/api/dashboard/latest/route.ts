@@ -60,18 +60,35 @@ export async function GET() {
       count: logs.size
     }))
 
-    // Chamado mais antigo
+    // Chamado mais antigo - APENAS status "Aguardando atendimento"
     let chamadoMaisAntigo = null
-    if (extractionData.length > 0) {
-      const sortedByDate = [...extractionData]
-        .filter(item => item.created_date)
-        .sort((a, b) => new Date(a.created_date!).getTime() - new Date(b.created_date!).getTime())
+    const aguardandoAtendimento = extractionData.filter(item => 
+      item.status === 'Aguardando atendimento' && 
+      item.created_date
+    )
+
+    console.log('Dados aguardando atendimento:', aguardandoAtendimento.map(item => ({
+      log: item.log_key,
+      date: item.created_date,
+      status: item.status
+    })))
+
+    if (aguardandoAtendimento.length > 0) {
+      // Ordenar por data de criação (mais antigo primeiro)
+      const sortedByDate = aguardandoAtendimento.sort((a, b) => {
+        const dateA = new Date(a.created_date!)
+        const dateB = new Date(b.created_date!)
+        return dateA.getTime() - dateB.getTime()
+      })
       
-      if (sortedByDate.length > 0) {
-        chamadoMaisAntigo = {
-          log: sortedByDate[0].log_key,
-          dataCreation: sortedByDate[0].created_date
-        }
+      console.log('Chamado mais antigo encontrado:', {
+        log: sortedByDate[0].log_key,
+        date: sortedByDate[0].created_date
+      })
+      
+      chamadoMaisAntigo = {
+        log: sortedByDate[0].log_key,
+        dataCreation: sortedByDate[0].created_date
       }
     }
 
@@ -116,6 +133,8 @@ export async function GET() {
       lojaMaiorAbertura,
       lastUpdate: latestExtraction.created_at
     }
+
+    console.log('Dashboard data retornado:', dashboardData)
 
     return NextResponse.json(dashboardData)
   } catch (error) {

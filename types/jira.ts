@@ -1,7 +1,6 @@
 // types/jira.ts
 export interface JiraConfiguration {
   id: string
-  user_id: string
   jira_email: string
   jira_token: string
   jira_url: string
@@ -12,7 +11,6 @@ export interface JiraConfiguration {
 
 export interface JiraExtraction {
   id: string
-  user_id: string
   start_date: string
   end_date: string
   total_issues?: number

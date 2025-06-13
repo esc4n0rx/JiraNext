@@ -1,37 +1,18 @@
 // app/api/jira/download/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyToken } from '@/lib/auth'
-import { supabaseAdmin } from '@/lib/supabase-admin' 
+import { supabase } from '@/lib/supabase'
+import * as XLSX from 'xlsx'
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json(
-        { error: 'Token de autorização necessário' },
-        { status: 401 }
-      )
-    }
-
-    const token = authHeader.split(' ')[1]
-    const decoded = verifyToken(token)
-    
-    if (!decoded) {
-      return NextResponse.json(
-        { error: 'Token inválido' },
-        { status: 401 }
-      )
-    }
-
     // Buscar extração
-    const { data: extraction, error } = await supabaseAdmin
+    const { data: extraction, error } = await supabase
       .from('jira_extractions')
       .select('*')
       .eq('id', params.id)
-      .eq('user_id', decoded.userId)
       .single()
 
     if (error || !extraction) {
@@ -69,7 +50,6 @@ export async function GET(
     ]
 
     // Gerar arquivo Excel
-    const XLSX = require('xlsx')
     const worksheet = XLSX.utils.json_to_sheet(mockData)
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Dados Jira')

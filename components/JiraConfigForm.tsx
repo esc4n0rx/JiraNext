@@ -1,7 +1,7 @@
 // components/JiraConfigForm.tsx
 "use client"
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -16,7 +16,7 @@ import { toast } from 'sonner'
 const configSchema = z.object({
   jira_email: z.string().email('Email inválido'),
   jira_token: z.string().min(1, 'Token é obrigatório'),
-  jira_url: z.string().url('URL inválida').default('https://hnt.atlassian.net'),
+  jira_url: z.string().url('URL inválida'),
   max_results: z.number().min(1).max(1000).default(100)
 })
 
@@ -30,12 +30,23 @@ export default function JiraConfigForm() {
   const form = useForm<ConfigFormData>({
     resolver: zodResolver(configSchema),
     defaultValues: {
-      jira_email: configuration?.jira_email || '',
-      jira_token: configuration?.jira_token || '',
-      jira_url: configuration?.jira_url || 'https://hnt.atlassian.net',
-      max_results: configuration?.max_results || 100
+      jira_email: '',
+      jira_token: '',
+      jira_url: 'https://hnt.atlassian.net',
+      max_results: 100
     }
   })
+
+  useEffect(() => {
+    if (configuration) {
+      form.reset({
+        jira_email: configuration.jira_email || '',
+        jira_token: configuration.jira_token || '',
+        jira_url: configuration.jira_url || 'https://hnt.atlassian.net',
+        max_results: configuration.max_results || 100
+      })
+    }
+  }, [configuration, form])
 
   const onSubmit = async (data: ConfigFormData) => {
     setSaving(true)
@@ -43,6 +54,7 @@ export default function JiraConfigForm() {
       await saveConfiguration(data)
       toast.success('Configurações salvas com sucesso!')
     } catch (error) {
+      console.error('Erro ao salvar:', error)
       toast.error('Erro ao salvar configurações')
     } finally {
       setSaving(false)
@@ -109,6 +121,9 @@ export default function JiraConfigForm() {
                 {form.formState.errors.jira_token.message}
               </p>
             )}
+            <p className="text-xs text-muted-foreground">
+              Para gerar um token, acesse: Jira → Configurações → Segurança → Tokens de API
+            </p>
           </div>
 
           <div className="space-y-2">

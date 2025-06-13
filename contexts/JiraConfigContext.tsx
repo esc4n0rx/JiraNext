@@ -2,9 +2,8 @@
 "use client"
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { useAuth } from './AuthContext'
-import { supabase } from '@/lib/supabase'
 import { JiraConfiguration } from '@/types/jira'
+import { supabase } from '@/lib/supabase'
 
 interface JiraConfigContextType {
   configuration: JiraConfiguration | null
@@ -16,18 +15,15 @@ interface JiraConfigContextType {
 const JiraConfigContext = createContext<JiraConfigContextType | undefined>(undefined)
 
 export function JiraConfigProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth()
   const [configuration, setConfiguration] = useState<JiraConfiguration | null>(null)
   const [loading, setLoading] = useState(true)
 
   const fetchConfiguration = async () => {
-    if (!user) return
-
     try {
       const { data, error } = await supabase
         .from('user_configurations')
         .select('*')
-        .eq('user_id', user.id)
+        .limit(1)
         .single()
 
       if (error && error.code !== 'PGRST116') {
@@ -44,11 +40,8 @@ export function JiraConfigProvider({ children }: { children: ReactNode }) {
   }
 
   const saveConfiguration = async (config: Partial<JiraConfiguration>) => {
-    if (!user) return
-
     try {
       const configData = {
-        user_id: user.id,
         ...config,
         updated_at: new Date().toISOString()
       }
@@ -82,7 +75,7 @@ export function JiraConfigProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     fetchConfiguration()
-  }, [user])
+  }, [])
 
   return (
     <JiraConfigContext.Provider

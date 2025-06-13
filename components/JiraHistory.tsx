@@ -2,7 +2,6 @@
 "use client"
 
 import { useState, useEffect } from 'react'
-import { useAuth } from '@/contexts/AuthContext'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -11,7 +10,6 @@ import { Download, Calendar, Clock, FileText, Loader2, History } from 'lucide-re
 import { toast } from 'sonner'
 
 export default function JiraHistory() {
-  const { user } = useAuth()
   const [extractions, setExtractions] = useState<JiraExtraction[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -21,12 +19,7 @@ export default function JiraHistory() {
 
   const fetchHistory = async () => {
     try {
-      const token = localStorage.getItem('auth_token')
-      const response = await fetch('/api/jira/history', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
+      const response = await fetch('/api/jira/history')
 
       if (!response.ok) {
         throw new Error('Erro ao buscar histórico')
@@ -44,12 +37,7 @@ export default function JiraHistory() {
 
   const downloadFile = async (extractionId: string, fileName: string) => {
     try {
-      const token = localStorage.getItem('auth_token')
-      const response = await fetch(`/api/jira/download/${extractionId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
+      const response = await fetch(`/api/jira/download/${extractionId}`)
 
       if (!response.ok) {
         throw new Error('Erro ao baixar arquivo')

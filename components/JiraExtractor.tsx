@@ -17,7 +17,13 @@ import { toast } from 'sonner'
 const extractionSchema = z.object({
   startDate: z.string().min(1, 'Data de início é obrigatória'),
   endDate: z.string().min(1, 'Data de fim é obrigatória')
-})
+}).refine(
+  (data) => new Date(data.startDate) <= new Date(data.endDate),
+  {
+    message: "Data de início deve ser anterior à data de fim",
+    path: ["endDate"],
+  }
+)
 
 type ExtractionFormData = z.infer<typeof extractionSchema>
 
@@ -29,7 +35,7 @@ export default function JiraExtractor() {
   const form = useForm<ExtractionFormData>({
     resolver: zodResolver(extractionSchema),
     defaultValues: {
-      startDate: new Date().toISOString().split('T')[0],
+      startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       endDate: new Date().toISOString().split('T')[0]
     }
   })
@@ -49,16 +55,15 @@ export default function JiraExtractor() {
         setProgress(prev => Math.min(prev + 10, 90))
       }, 500)
 
-      const token = localStorage.getItem('auth_token')
       const response = await fetch('/api/jira/extract', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           startDate: data.startDate,
-          endDate: data.endDate
+          endDate: data.endDate,
+          configuration
         })
       })
 
@@ -160,12 +165,12 @@ export default function JiraExtractor() {
             ) : (
               <>
                 <Download className="mr-2 h-4 w-4" />
-               Extrair Dados
-             </>
-           )}
-         </Button>
-       </form>
-     </CardContent>
-   </Card>
- )
+                Extrair Dados
+              </>
+            )}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  )
 }

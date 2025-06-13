@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "app/api/jira/extract-async/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/jira/status/[id]/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/jira/download-extraction/[id]/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}

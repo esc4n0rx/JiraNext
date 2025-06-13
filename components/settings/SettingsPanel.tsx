@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import NotificationSettings from './NotificationSettings'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -127,10 +128,14 @@ export default function SettingsPanel() {
                 <Palette className="h-4 w-4 mr-2" />
                 Interface
               </TabsTrigger>
-              <TabsTrigger value="notifications" className="flex items-center">
+               <TabsTrigger value="notifications" className="flex items-center">
                 <Bell className="h-4 w-4 mr-2" />
                 Notificações
-              </TabsTrigger>
+            </TabsTrigger>
+            <TabsTrigger value="advanced" className="flex items-center">
+                <Settings className="h-4 w-4 mr-2" />
+                Avançado
+            </TabsTrigger>
             </TabsList>
 
             <motion.div
@@ -213,6 +218,10 @@ export default function SettingsPanel() {
                   </div>
                 </div>
               </TabsContent>
+
+              <TabsContent value="notifications" className="space-y-6 mt-6">
+                <NotificationSettings />
+                </TabsContent>
 
               <TabsContent value="interface" className="space-y-6 mt-6">
                 <div className="space-y-4">

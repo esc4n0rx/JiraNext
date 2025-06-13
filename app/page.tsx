@@ -7,8 +7,10 @@ import { DashboardProvider } from '@/contexts/DashboardContext'
 import DashboardStats from '@/components/dashboard/DashboardStats'
 import StatusChart from '@/components/dashboard/StatusChart'
 import JiraExtractorNew from '@/components/extraction/JiraExtractorNew'
+import NotificationPermissionRequest from '@/components/notifications/NotificationPermissionRequest'
 import ReportsSection from '@/components/reports/ReportsSection'
 import SettingsPanel from '@/components/settings/SettingsPanel'
+import { useServiceWorker } from '@/hooks/use-service-worker'
 import { 
   BarChart3, 
   Download, 
@@ -16,6 +18,7 @@ import {
   Settings,
   Zap
 } from 'lucide-react'
+import ActiveExtractions from '@/components/extraction/ActiveExtractions'
 
 const TabTriggerWithIcon = ({ value, icon: Icon, children }: {
   value: string
@@ -32,8 +35,10 @@ const TabTriggerWithIcon = ({ value, icon: Icon, children }: {
 )
 
 export default function HomePage() {
+  useServiceWorker()
   return (
     <DashboardProvider>
+      <NotificationPermissionRequest />
       <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
         <div className="container mx-auto px-4 py-8">
           {/* Header */}
@@ -74,6 +79,7 @@ export default function HomePage() {
                 <TabTriggerWithIcon value="extract" icon={Download}>
                   Extrair Dados
                 </TabTriggerWithIcon>
+
                 <TabTriggerWithIcon value="reports" icon={FileText}>
                   Relatórios
                 </TabTriggerWithIcon>
@@ -81,6 +87,13 @@ export default function HomePage() {
                   Configurações
                 </TabTriggerWithIcon>
               </TabsList>
+
+              <TabsContent value="extract" className="space-y-6">
+                <div className="flex justify-center">
+                  <JiraExtractorNew />
+                </div>
+                <ActiveExtractions />
+              </TabsContent>
 
               <TabsContent value="dashboard" className="space-y-6">
                 <DashboardStats />

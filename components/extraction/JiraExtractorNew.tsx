@@ -1,8 +1,8 @@
 // components/extraction/JiraExtractorNew.tsx
 "use client"
 
-import { useState } from 'react'
-import { motion } from 'framer-motion'
+import { useState, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -10,11 +10,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import ExtractionAnimation from './ExtractionAnimation'
-import { Download } from 'lucide-react'
+import { Progress } from '@/components/ui/progress'
+import { Badge } from '@/components/ui/badge'
+import { Download, Clock, CheckCircle, XCircle, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useDashboard } from '@/contexts/DashboardContext'
 import { useConfig } from '@/hooks/use-config'
+import { useNotifications } from '@/hooks/use-notifications'
 
 const extractionSchema = z.object({
   startDate: z.string().min(1, 'Data de início é obrigatória'),
@@ -29,25 +31,22 @@ const extractionSchema = z.object({
 
 type ExtractionFormData = z.infer<typeof extractionSchema>
 
-const extractionSteps = [
-  "Conectando com o Jira...",
-  "Validando credenciais...",
-  "Construindo consulta JQL...",
-  "Buscando chamados (página 1)...",
-  "Processando materiais...",
-  "Organizando categorias...",
-  "Calculando divergências...",
-  "Salvando no banco de dados...",
-  "Gerando planilha Excel...",
-  "Finalizando extração..."
-]
+interface ExtractionStatus {
+  id: string
+  status: 'processing' | 'completed' | 'error'
+  progress: number
+  currentStep: string
+  totalIssues?: number
+  errorMessage?: string
+  filePath?: string
+}
 
 export default function JiraExtractorNew() {
   const { refreshDashboard } = useDashboard()
   const { config } = useConfig()
-  const [extracting, setExtracting] = useState(false)
-  const [progress, setProgress] = useState(0)
-  const [currentStepIndex, setCurrentStepIndex] = useState(0)
+  const [currentExtraction, setCurrentExtraction] = useState<ExtractionStatus | null>(null)
+  const { notifyExtractionCompleted, notifyExtractionError } = useNotifications()
+  const [isPolling, setIsPolling] = useState(false)
 
   // Calcular datas padrão (últimos 30 dias)
   const today = new Date()
@@ -62,32 +61,61 @@ export default function JiraExtractorNew() {
     }
   })
 
-  const simulateProgress = async () => {
-    for (let i = 0; i < extractionSteps.length; i++) {
-      setCurrentStepIndex(i)
-      
-      let stepDuration = 600
-      if (i === 3) stepDuration = 1200 // Busca de dados demora mais
-      if (i === 7) stepDuration = 800 // Salvar no banco demora um pouco mais
-      
-      await new Promise(resolve => setTimeout(resolve, stepDuration))
-      setProgress(((i + 1) / extractionSteps.length) * 85)
+  // Polling para acompanhar progresso
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null
+
+    if (currentExtraction && currentExtraction.status === 'processing' && isPolling) {
+      interval = setInterval(async () => {
+        try {
+          const response = await fetch(`/api/jira/status/${currentExtraction.id}`)
+          if (response.ok) {
+            const status = await response.json()
+            setCurrentExtraction(status)
+
+            if (status.status === 'completed') {
+              toast.success(`Extração concluída! ${status.totalIssues} registros processados`)
+              
+              // Enviar notificação push
+              if (config.notifications) {
+                notifyExtractionCompleted(
+                  status.totalIssues || 0,
+                  new Date(status.startDate).toLocaleDateString('pt-BR'),
+                  new Date(status.endDate).toLocaleDateString('pt-BR')
+                )
+              }
+              
+              setIsPolling(false)
+              refreshDashboard()
+            } else if (status.status === 'error') {
+              toast.error(`Erro na extração: ${status.errorMessage}`)
+              
+              // Enviar notificação de erro
+              if (config.notifications) {
+                notifyExtractionError(status.errorMessage || 'Erro desconhecido')
+              }
+              
+              setIsPolling(false)
+            }
+          }
+        } catch (error) {
+          console.error('Erro ao buscar status:', error)
+        }
+      }, 2000)
     }
-  }
+
+    return () => {
+      if (interval) clearInterval(interval)
+    }
+  }, [currentExtraction, isPolling, refreshDashboard, config.notifications, notifyExtractionCompleted, notifyExtractionError])
 
   const onSubmit = async (data: ExtractionFormData) => {
     if (!config.jiraDomain || !config.jiraToken || !config.jiraEmail) {
-      toast.error('Configure suas credenciais do Jira primeiro (domínio, email e token)')
+      toast.error('Configure suas credenciais do Jira primeiro')
       return
     }
 
-    setExtracting(true)
-    setProgress(0)
-    setCurrentStepIndex(0)
-
     try {
-      const progressPromise = simulateProgress()
-
       const configuration = {
         jira_url: config.jiraDomain,
         jira_email: config.jiraEmail,
@@ -95,7 +123,7 @@ export default function JiraExtractorNew() {
         max_results: 100
       }
 
-      const extractionPromise = fetch('/api/jira/extract', {
+      const response = await fetch('/api/jira/extract-async', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -107,67 +135,106 @@ export default function JiraExtractorNew() {
         })
       })
 
-      const [, response] = await Promise.all([progressPromise, extractionPromise])
-
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Erro na extração')
+        throw new Error(errorData.error || 'Erro ao iniciar extração')
       }
 
-      setProgress(100)
-      await new Promise(resolve => setTimeout(resolve, 500))
+      const result = await response.json()
+      
+      setCurrentExtraction({
+        id: result.extractionId,
+        status: 'processing',
+        progress: 0,
+        currentStep: 'Iniciando extração...'
+      })
+      
+      setIsPolling(true)
+      toast.success('Extração iniciada! Acompanhe o progresso abaixo.')
+
+    } catch (error) {
+      console.error('Erro ao iniciar extração:', error)
+      toast.error(error instanceof Error ? error.message : 'Erro ao iniciar extração')
+    }
+  }
+
+  const downloadFile = async () => {
+    if (!currentExtraction || currentExtraction.status !== 'completed') return
+
+    try {
+      const response = await fetch(`/api/jira/download-extraction/${currentExtraction.id}`)
+      
+      if (!response.ok) {
+        throw new Error('Erro ao baixar arquivo')
+      }
 
       const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.style.display = 'none'
       a.href = url
-      a.download = `base_jira_ajustada_${data.startDate}_${data.endDate}.xlsx`
+      a.download = `base_jira_ajustada_${currentExtraction.id}.xlsx`
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
 
-      toast.success('Extração concluída e dados salvos com sucesso!')
-      
-      setTimeout(() => {
-        refreshDashboard()
-      }, 1000)
-
+      toast.success('Arquivo baixado com sucesso!')
     } catch (error) {
-      console.error('Erro na extração:', error)
-      toast.error(error instanceof Error ? error.message : 'Erro durante a extração')
-    } finally {
-      setExtracting(false)
-      setProgress(0)
-      setCurrentStepIndex(0)
+      toast.error('Erro ao baixar arquivo')
     }
   }
 
   const hasValidConfig = config.jiraDomain && config.jiraToken && config.jiraEmail
+  const isExtracting = currentExtraction?.status === 'processing'
+
+  const getStatusIcon = () => {
+    if (!currentExtraction) return null
+    
+    switch (currentExtraction.status) {
+      case 'processing':
+        return <RefreshCw className="h-5 w-5 animate-spin text-blue-500" />
+      case 'completed':
+        return <CheckCircle className="h-5 w-5 text-green-500" />
+      case 'error':
+        return <XCircle className="h-5 w-5 text-red-500" />
+      default:
+        return null
+    }
+  }
+
+  const getStatusBadge = () => {
+    if (!currentExtraction) return null
+    
+    switch (currentExtraction.status) {
+      case 'processing':
+        return <Badge variant="secondary" className="bg-blue-100 text-blue-800">Processando</Badge>
+      case 'completed':
+        return <Badge variant="secondary" className="bg-green-100 text-green-800">Concluído</Badge>
+      case 'error':
+        return <Badge variant="destructive">Erro</Badge>
+      default:
+        return null
+    }
+  }
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="w-full max-w-2xl mx-auto"
+      className="w-full max-w-2xl mx-auto space-y-6"
     >
+      {/* Card principal */}
       <Card className="border-0 shadow-xl bg-gradient-to-br from-white to-gray-50 dark:from-gray-900 dark:to-gray-800">
         <CardHeader className="text-center pb-4">
-          <motion.div
-            initial={{ scale: 0.8 }}
-            animate={{ scale: 1 }}
-            transition={{ duration: 0.5 }}
-          >
-            <CardTitle className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-              Extrair Dados do Jira
-            </CardTitle>
-            {hasValidConfig && (
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                Conectado a: {config.jiraDomain}
-              </p>
-            )}
-          </motion.div>
+          <CardTitle className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            Extrair Dados do Jira
+          </CardTitle>
+          {hasValidConfig && (
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+              Conectado a: {config.jiraDomain}
+            </p>
+          )}
         </CardHeader>
         
         <CardContent className="space-y-6">
@@ -183,19 +250,12 @@ export default function JiraExtractorNew() {
             </motion.div>
           )}
 
-          {extracting ? (
-            <ExtractionAnimation 
-              progress={progress}
-              currentStep={extractionSteps[currentStepIndex]}
-              isExtracting={extracting}
-            />
-          ) : (
+          {!isExtracting && (
             <motion.form
               onSubmit={form.handleSubmit(onSubmit)}
               className="space-y-6"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ duration: 0.3 }}
             >
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="space-y-3">
@@ -242,7 +302,6 @@ export default function JiraExtractorNew() {
                     { label: 'Últimos 15 dias', days: 15 },
                     { label: 'Últimos 30 dias', days: 30 },
                     { label: 'Últimos 60 dias', days: 60 },
-                    { label: 'Últimos 90 dias', days: 90 }
                   ].map(({ label, days }) => (
                     <Button
                       key={days}
@@ -265,33 +324,120 @@ export default function JiraExtractorNew() {
                 </div>
               </div>
 
-              <motion.div
-                whileHover={{ scale: hasValidConfig ? 1.02 : 1 }}
-                whileTap={{ scale: hasValidConfig ? 0.98 : 1 }}
+              <Button 
+                type="submit" 
+                className="w-full h-12 text-lg font-semibold bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                disabled={!hasValidConfig}
               >
-                <Button 
-                  type="submit" 
-                  className="w-full h-12 text-lg font-semibold bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 transition-all duration-300"
-                  disabled={extracting || !hasValidConfig}
-                >
-                  <Download className="mr-2 h-5 w-5" />
-                  {hasValidConfig ? 'Iniciar Extração' : 'Configure o Jira Primeiro'}
-                </Button>
-              </motion.div>
+                <Download className="mr-2 h-5 w-5" />
+                {hasValidConfig ? 'Iniciar Extração' : 'Configure o Jira Primeiro'}
+              </Button>
 
               {hasValidConfig && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="text-xs text-gray-500 dark:text-gray-400 text-center"
-                >
-                  Os dados extraídos serão salvos automaticamente no banco de dados para relatórios futuros
-                </motion.div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
+                  A extração será processada em background. Você pode fechar esta página e voltar depois.
+                </div>
               )}
             </motion.form>
           )}
         </CardContent>
       </Card>
-    </motion.div>
-  )
+
+      {/* Card de progresso */}
+      <AnimatePresence>
+        {currentExtraction && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+          >
+            <Card className="border-0 shadow-lg">
+              <CardHeader className="pb-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    {getStatusIcon()}
+                    <h3 className="text-lg font-semibold">Status da Extração</h3>
+                  </div>
+                  {getStatusBadge()}
+                </div>
+              </CardHeader>
+              
+              <CardContent className="space-y-4">
+                {currentExtraction.status === 'processing' && (
+                  <>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span>{currentExtraction.currentStep}</span>
+                        <span className="font-mono">{currentExtraction.progress}%</span>
+                      </div>
+                      <Progress value={currentExtraction.progress} className="h-2" />
+                    </div>
+                    
+                    <div className="flex items-center justify-center text-sm text-gray-600 dark:text-gray-400">
+                      <Clock className="h-4 w-4 mr-2" />
+                      Processamento em andamento...
+                    </div>
+                  </>
+                )}
+                
+                {currentExtraction.status === 'completed' && (
+                  <div className="space-y-4">
+                    <div className="text-center">
+                     <p className="text-green-600 dark:text-green-400 font-medium">
+                       Extração concluída com sucesso!
+                     </p>
+                     {currentExtraction.totalIssues && (
+                       <p className="text-sm text-gray-600 dark:text-gray-400">
+                         {currentExtraction.totalIssues} registros processados
+                       </p>
+                     )}
+                   </div>
+                   
+                   <Button 
+                     onClick={downloadFile}
+                     className="w-full bg-green-600 hover:bg-green-700"
+                   >
+                     <Download className="mr-2 h-4 w-4" />
+                     Baixar Planilha Excel
+                   </Button>
+                   
+                   <Button 
+                     variant="outline"
+                     onClick={() => setCurrentExtraction(null)}
+                     className="w-full"
+                   >
+                     Nova Extração
+                   </Button>
+                 </div>
+               )}
+               
+               {currentExtraction.status === 'error' && (
+                 <div className="space-y-4">
+                   <div className="text-center">
+                     <p className="text-red-600 dark:text-red-400 font-medium">
+                       Erro durante a extração
+                     </p>
+                     {currentExtraction.errorMessage && (
+                       <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                         {currentExtraction.errorMessage}
+                       </p>
+                     )}
+                   </div>
+                   
+                   <Button 
+                     variant="outline"
+                     onClick={() => setCurrentExtraction(null)}
+                     className="w-full"
+                   >
+                     Tentar Novamente
+                   </Button>
+                 </div>
+               )}
+             </CardContent>
+           </Card>
+         </motion.div>
+       )}
+     </AnimatePresence>
+   </motion.div>
+ )
 }

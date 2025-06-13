@@ -1,12 +1,13 @@
+// hooks/use-config.tsx
 "use client"
 
-import type React from "react"
-
-import { createContext, useContext, useEffect, useState } from "react"
+import { createContext, useContext, useEffect, useState } from 'react'
+import type React from 'react'
 
 type Config = {
   jiraToken: string
   jiraDomain: string
+  jiraEmail: string // Adicionando email separado
   jiraApiPath: string
   notifications: boolean
   useMockData: boolean
@@ -20,9 +21,10 @@ type ConfigContextType = {
 const defaultConfig: Config = {
   jiraToken: "",
   jiraDomain: "",
+  jiraEmail: "", // Novo campo
   jiraApiPath: "/rest/api/3/search",
   notifications: true,
-  useMockData: true, // Habilitado por padrão para facilitar demonstração
+  useMockData: false,
 }
 
 const ConfigContext = createContext<ConfigContextType>({
@@ -39,7 +41,12 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
     const savedConfig = localStorage.getItem("jira-extractor-config")
     if (savedConfig) {
       try {
-        setConfig(JSON.parse(savedConfig))
+        const parsed = JSON.parse(savedConfig)
+        // Migrar configuração antiga se necessário
+        if (parsed && !parsed.jiraEmail) {
+          parsed.jiraEmail = ""
+        }
+        setConfig(parsed)
       } catch (error) {
         console.error("Erro ao carregar configurações:", error)
       }
@@ -54,7 +61,11 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
     }
   }, [config, loaded])
 
-  return <ConfigContext.Provider value={{ config, setConfig }}>{children}</ConfigContext.Provider>
+  return (
+    <ConfigContext.Provider value={{ config, setConfig }}>
+      {children}
+    </ConfigContext.Provider>
+  )
 }
 
 export function useConfig() {

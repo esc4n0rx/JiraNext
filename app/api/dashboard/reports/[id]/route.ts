@@ -4,13 +4,16 @@ import { supabase } from '@/lib/supabase'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Aguardar params antes de usar
+    const { id } = await params
+
     const { data: extractionData, error } = await supabase
       .from('extraction_data')
       .select('*')
-      .eq('extraction_id', params.id)
+      .eq('extraction_id', id)
       .order('created_at', { ascending: false })
 
     if (error) {

@@ -1,15 +1,15 @@
 import * as XLSX from "xlsx"
-import type { JiraIssue } from "@/components/main-card"
+import type { JiraIssue } from "@/types/jira"
 
 export function exportToExcel(data: JiraIssue[], filename: string) {
   // Preparar os dados para exportação
   const exportData = data.map((item) => ({
     Chave: item.key,
-    Resumo: item.summary,
+    Resumo: item.fields,
     Status: item.status,
-    Responsável: item.assignee,
+    Responsável: "Jira",
     "Data de Criação": item.created,
-    "Última Atualização": item.updated,
+    "Última Atualização": item.created,
   }))
 
   // Criar uma planilha

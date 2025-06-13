@@ -68,19 +68,17 @@ const StatCard = ({
   )
 }
 
-// Função corrigida para formatar data
 const formatDateDisplay = (dateString: string): string => {
   try {
-    // Se a data já está no formato brasileiro DD/MM/YYYY, retornar como está
+
     if (dateString.includes('/') && dateString.split('/').length === 3) {
       const parts = dateString.split('/')
-      // Verificar se já está no formato DD/MM/YYYY
+
       if (parts[0].length <= 2) {
         return dateString
       }
     }
     
-    // Se é uma data ISO (YYYY-MM-DD ou YYYY-MM-DDTHH:mm:ss), converter
     if (dateString.includes('-')) {
       const date = parseISO(dateString)
       if (!isNaN(date.getTime())) {
@@ -88,13 +86,12 @@ const formatDateDisplay = (dateString: string): string => {
       }
     }
     
-    // Tentar parse direto como último recurso
     const directDate = new Date(dateString)
     if (!isNaN(directDate.getTime())) {
       return format(directDate, 'MM/dd/yyyy', { locale: ptBR })
     }
     
-    return dateString // Retornar original se não conseguir converter
+    return dateString
   } catch (error) {
     console.error('Erro ao formatar data:', dateString, error)
     return dateString

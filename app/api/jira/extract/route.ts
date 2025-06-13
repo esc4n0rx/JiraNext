@@ -1,7 +1,7 @@
 // app/api/jira/extract/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth'
-import { supabaseAdmin } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin' 
 import { processJiraIssue, reorganizeData } from '@/lib/jira-utils'
 import { JiraIssue, ProcessedIssueData } from '@/types/jira'
 import * as XLSX from 'xlsx'

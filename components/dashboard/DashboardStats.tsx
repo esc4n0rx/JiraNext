@@ -69,34 +69,39 @@ const StatCard = ({
 }
 
 const formatDateDisplay = (dateString: string): string => {
+  console.log('formatDateDisplay called with:', dateString);
   try {
-
-    if (dateString.includes('/') && dateString.split('/').length === 3) {
-      const parts = dateString.split('/')
-
-      if (parts[0].length <= 2) {
-        return dateString
-      }
-    }
-    
+    // Esta parte do seu código lida corretamente com o formato YYYY-MM-DD
     if (dateString.includes('-')) {
-      const date = parseISO(dateString)
+      const date = parseISO(dateString); // Converte '2025-02-06' para um objeto Date
+
+      // Verifica se a data é válida
       if (!isNaN(date.getTime())) {
-        return format(date, 'MM/dd/yyyy', { locale: ptBR })
+        // **AQUI ESTÁ A CORREÇÃO**
+        // Altere 'MM/dd/yyyy' para 'dd/MM/yyyy'
+        return format(date, 'MM/dd/yyyy', { locale: ptBR });
       }
     }
-    
-    const directDate = new Date(dateString)
-    if (!isNaN(directDate.getTime())) {
-      return format(directDate, 'MM/dd/yyyy', { locale: ptBR })
+
+    // O resto da sua lógica para outros formatos de entrada
+    if (dateString.includes('/') && dateString.split('/').length === 3) {
+      const parts = dateString.split('/');
+      if (parts[0].length <= 2) {
+        return dateString;
+      }
     }
-    
-    return dateString
+
+    const directDate = new Date(dateString);
+    if (!isNaN(directDate.getTime())) {
+      return format(directDate, 'dd/MM/yyyy', { locale: ptBR });
+    }
+
+    return dateString; // Retorna a string original se nenhum formato for reconhecido
   } catch (error) {
-    console.error('Erro ao formatar data:', dateString, error)
-    return dateString
+    console.error('Erro ao formatar data:', dateString, error);
+    return dateString;
   }
-}
+};
 
 export default function DashboardStats() {
   const { dashboardData, loading } = useDashboard()

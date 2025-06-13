@@ -8,18 +8,19 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { DatePicker } from '@/components/date-picker'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import ExtractionAnimation from './ExtractionAnimation'
 import { Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { useDashboard } from '@/contexts/DashboardContext'
-import { useConfig } from '@/hooks/use-config' // Usando seu hook existente
+import { useConfig } from '@/hooks/use-config'
 
 const extractionSchema = z.object({
-  startDate: z.date({ required_error: 'Data de início é obrigatória' }),
-  endDate: z.date({ required_error: 'Data de fim é obrigatória' })
+  startDate: z.string().min(1, 'Data de início é obrigatória'),
+  endDate: z.string().min(1, 'Data de fim é obrigatória')
 }).refine(
-  (data) => data.startDate <= data.endDate,
+  (data) => new Date(data.startDate) <= new Date(data.endDate),
   {
     message: "Data de início deve ser anterior à data de fim",
     path: ["endDate"],
@@ -43,16 +44,21 @@ const extractionSteps = [
 
 export default function JiraExtractorNew() {
   const { refreshDashboard } = useDashboard()
-  const { config } = useConfig() // Usando seu hook existente
+  const { config } = useConfig()
   const [extracting, setExtracting] = useState(false)
   const [progress, setProgress] = useState(0)
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
 
+  // Calcular datas padrão (últimos 30 dias)
+  const today = new Date()
+  const thirtyDaysAgo = new Date()
+  thirtyDaysAgo.setDate(today.getDate() - 30)
+
   const form = useForm<ExtractionFormData>({
     resolver: zodResolver(extractionSchema),
     defaultValues: {
-      startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-      endDate: new Date()
+      startDate: thirtyDaysAgo.toISOString().split('T')[0],
+      endDate: today.toISOString().split('T')[0]
     }
   })
 
@@ -60,52 +66,47 @@ export default function JiraExtractorNew() {
     for (let i = 0; i < extractionSteps.length; i++) {
       setCurrentStepIndex(i)
       
-      // Variar duração baseado no step
       let stepDuration = 600
       if (i === 3) stepDuration = 1200 // Busca de dados demora mais
       if (i === 7) stepDuration = 800 // Salvar no banco demora um pouco mais
       
       await new Promise(resolve => setTimeout(resolve, stepDuration))
-      setProgress(((i + 1) / extractionSteps.length) * 85) // 85% para deixar espaço para finalização
+      setProgress(((i + 1) / extractionSteps.length) * 85)
     }
   }
 
   const onSubmit = async (data: ExtractionFormData) => {
-     if (!config.jiraDomain || !config.jiraToken || !config.jiraEmail) {
-    toast.error('Configure suas credenciais do Jira primeiro (domínio, email e token)')
-    return
-  }
+    if (!config.jiraDomain || !config.jiraToken || !config.jiraEmail) {
+      toast.error('Configure suas credenciais do Jira primeiro (domínio, email e token)')
+      return
+    }
 
     setExtracting(true)
     setProgress(0)
     setCurrentStepIndex(0)
 
     try {
-      // Iniciar animação de progresso
       const progressPromise = simulateProgress()
 
-      // Preparar configuração no formato esperado pela API
       const configuration = {
         jira_url: config.jiraDomain,
         jira_email: config.jiraEmail,
         jira_token: config.jiraToken,
-        max_results: 100 // valor padrão
-        }
+        max_results: 100
+      }
 
-      // Fazer extração real
       const extractionPromise = fetch('/api/jira/extract', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          startDate: data.startDate.toISOString().split('T')[0],
-          endDate: data.endDate.toISOString().split('T')[0],
+          startDate: data.startDate,
+          endDate: data.endDate,
           configuration
         })
       })
 
-      // Aguardar ambos
       const [, response] = await Promise.all([progressPromise, extractionPromise])
 
       if (!response.ok) {
@@ -113,17 +114,15 @@ export default function JiraExtractorNew() {
         throw new Error(errorData.error || 'Erro na extração')
       }
 
-      // Finalizar progresso
       setProgress(100)
-      await new Promise(resolve => setTimeout(resolve, 500)) // Pausa para mostrar 100%
+      await new Promise(resolve => setTimeout(resolve, 500))
 
-      // Download do arquivo
       const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.style.display = 'none'
       a.href = url
-      a.download = `base_jira_ajustada_${data.startDate.toISOString().split('T')[0]}_${data.endDate.toISOString().split('T')[0]}.xlsx`
+      a.download = `base_jira_ajustada_${data.startDate}_${data.endDate}.xlsx`
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
@@ -131,7 +130,6 @@ export default function JiraExtractorNew() {
 
       toast.success('Extração concluída e dados salvos com sucesso!')
       
-      // Atualizar dashboard com dados reais
       setTimeout(() => {
         refreshDashboard()
       }, 1000)
@@ -146,7 +144,6 @@ export default function JiraExtractorNew() {
     }
   }
 
-  // Verificar se as configurações estão válidas
   const hasValidConfig = config.jiraDomain && config.jiraToken && config.jiraEmail
 
   return (
@@ -200,12 +197,16 @@ export default function JiraExtractorNew() {
               animate={{ opacity: 1 }}
               transition={{ duration: 0.3 }}
             >
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Data de Início</label>
-                  <DatePicker
-                    date={form.watch('startDate')}
-                    setDate={(date) => form.setValue('startDate', date!)}
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="space-y-3">
+                  <Label htmlFor="startDate" className="text-sm font-medium">
+                    Data de Início
+                  </Label>
+                  <Input
+                    id="startDate"
+                    type="date"
+                    {...form.register('startDate')}
+                    className="w-full text-base"
                   />
                   {form.formState.errors.startDate && (
                     <p className="text-sm text-red-500">
@@ -214,17 +215,53 @@ export default function JiraExtractorNew() {
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Data de Fim</label>
-                  <DatePicker
-                    date={form.watch('endDate')}
-                    setDate={(date) => form.setValue('endDate', date!)}
+                <div className="space-y-3">
+                  <Label htmlFor="endDate" className="text-sm font-medium">
+                    Data de Fim
+                  </Label>
+                  <Input
+                    id="endDate"
+                    type="date"
+                    {...form.register('endDate')}
+                    className="w-full text-base"
                   />
                   {form.formState.errors.endDate && (
                     <p className="text-sm text-red-500">
                       {form.formState.errors.endDate.message}
                     </p>
                   )}
+                </div>
+              </div>
+
+              {/* Botões de período rápido */}
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">Períodos rápidos:</Label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { label: 'Últimos 7 dias', days: 7 },
+                    { label: 'Últimos 15 dias', days: 15 },
+                    { label: 'Últimos 30 dias', days: 30 },
+                    { label: 'Últimos 60 dias', days: 60 },
+                    { label: 'Últimos 90 dias', days: 90 }
+                  ].map(({ label, days }) => (
+                    <Button
+                      key={days}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const end = new Date()
+                        const start = new Date()
+                        start.setDate(end.getDate() - days)
+                        
+                        form.setValue('startDate', start.toISOString().split('T')[0])
+                        form.setValue('endDate', end.toISOString().split('T')[0])
+                      }}
+                      className="text-xs"
+                    >
+                      {label}
+                    </Button>
+                  ))}
                 </div>
               </div>
 

@@ -5,14 +5,16 @@ import * as XLSX from 'xlsx'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } } // <<< CORREÇÃO AQUI
 ) {
   try {
+    const { id } = context.params; // E aqui, para obter o 'id'
+
     // Buscar extração
     const { data: extraction, error } = await supabase
       .from('jira_extractions')
       .select('*')
-      .eq('id', params.id)
+      .eq('id', id) // Usando o 'id' obtido do context
       .single()
 
     if (error || !extraction) {

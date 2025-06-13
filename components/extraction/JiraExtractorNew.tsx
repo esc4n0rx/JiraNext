@@ -61,7 +61,7 @@ export default function JiraExtractorNew() {
     }
   })
 
-  // Polling para acompanhar progresso
+  // Polling para acompanhar progresso com verificações de segurança
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null
 
@@ -69,39 +69,50 @@ export default function JiraExtractorNew() {
       interval = setInterval(async () => {
         try {
           const response = await fetch(`/api/jira/status/${currentExtraction.id}`)
-          if (response.ok) {
-            const status = await response.json()
-            setCurrentExtraction(status)
+          
+          if (!response.ok) {
+            console.error(`Erro HTTP ${response.status}`)
+            return
+          }
 
-            if (status.status === 'completed') {
-              toast.success(`Extração concluída! ${status.totalIssues} registros processados`)
-              
-              // Enviar notificação push
-              if (config.notifications) {
-                notifyExtractionCompleted(
-                  status.totalIssues || 0,
-                  new Date(status.startDate).toLocaleDateString('pt-BR'),
-                  new Date(status.endDate).toLocaleDateString('pt-BR')
-                )
-              }
-              
-              setIsPolling(false)
-              refreshDashboard()
-            } else if (status.status === 'error') {
-              toast.error(`Erro na extração: ${status.errorMessage}`)
-              
-              // Enviar notificação de erro
-              if (config.notifications) {
-                notifyExtractionError(status.errorMessage || 'Erro desconhecido')
-              }
-              
-              setIsPolling(false)
+          const contentType = response.headers.get('content-type')
+          if (!contentType || !contentType.includes('application/json')) {
+            console.error('Resposta não é JSON válido')
+            return
+          }
+
+          const status = await response.json()
+          setCurrentExtraction(status)
+
+          if (status.status === 'completed') {
+            toast.success(`Extração concluída! ${status.totalIssues || 0} registros processados`)
+            
+            // Enviar notificação push
+            if (config.notifications) {
+              notifyExtractionCompleted(
+                status.totalIssues || 0,
+                new Date(status.startDate).toLocaleDateString('pt-BR'),
+                new Date(status.endDate).toLocaleDateString('pt-BR')
+              )
             }
+            
+            setIsPolling(false)
+            refreshDashboard()
+          } else if (status.status === 'error') {
+            toast.error(`Erro na extração: ${status.errorMessage || 'Erro desconhecido'}`)
+            
+            // Enviar notificação de erro
+            if (config.notifications) {
+              notifyExtractionError(status.errorMessage || 'Erro desconhecido')
+            }
+            
+            setIsPolling(false)
           }
         } catch (error) {
           console.error('Erro ao buscar status:', error)
+          // Não quebrar o polling por um erro pontual
         }
-      }, 2000)
+      }, 3000) // Aumentar intervalo para 3 segundos
     }
 
     return () => {
@@ -383,61 +394,61 @@ export default function JiraExtractorNew() {
                 {currentExtraction.status === 'completed' && (
                   <div className="space-y-4">
                     <div className="text-center">
-                     <p className="text-green-600 dark:text-green-400 font-medium">
-                       Extração concluída com sucesso!
-                     </p>
-                     {currentExtraction.totalIssues && (
-                       <p className="text-sm text-gray-600 dark:text-gray-400">
-                         {currentExtraction.totalIssues} registros processados
-                       </p>
-                     )}
-                   </div>
-                   
-                   <Button 
-                     onClick={downloadFile}
-                     className="w-full bg-green-600 hover:bg-green-700"
-                   >
-                     <Download className="mr-2 h-4 w-4" />
-                     Baixar Planilha Excel
-                   </Button>
-                   
-                   <Button 
-                     variant="outline"
-                     onClick={() => setCurrentExtraction(null)}
-                     className="w-full"
-                   >
-                     Nova Extração
-                   </Button>
-                 </div>
-               )}
-               
-               {currentExtraction.status === 'error' && (
-                 <div className="space-y-4">
-                   <div className="text-center">
-                     <p className="text-red-600 dark:text-red-400 font-medium">
-                       Erro durante a extração
-                     </p>
-                     {currentExtraction.errorMessage && (
-                       <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                         {currentExtraction.errorMessage}
-                       </p>
-                     )}
-                   </div>
-                   
-                   <Button 
-                     variant="outline"
-                     onClick={() => setCurrentExtraction(null)}
-                     className="w-full"
-                   >
-                     Tentar Novamente
-                   </Button>
-                 </div>
-               )}
-             </CardContent>
-           </Card>
-         </motion.div>
-       )}
-     </AnimatePresence>
-   </motion.div>
- )
+                      <p className="text-green-600 dark:text-green-400 font-medium">
+                        Extração concluída com sucesso!
+                      </p>
+                      {currentExtraction.totalIssues && (
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          {currentExtraction.totalIssues} registros processados
+                        </p>
+                      )}
+                    </div>
+                    
+                    <Button 
+                      onClick={downloadFile}
+                      className="w-full bg-green-600 hover:bg-green-700"
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Baixar Planilha Excel
+                    </Button>
+                    
+                    <Button 
+                      variant="outline"
+                      onClick={() => setCurrentExtraction(null)}
+                      className="w-full"
+                    >
+                      Nova Extração
+                    </Button>
+                  </div>
+                )}
+                
+                {currentExtraction.status === 'error' && (
+                  <div className="space-y-4">
+                    <div className="text-center">
+                      <p className="text-red-600 dark:text-red-400 font-medium">
+                        Erro durante a extração
+                      </p>
+                      {currentExtraction.errorMessage && (
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                          {currentExtraction.errorMessage}
+                        </p>
+                      )}
+                    </div>
+                    
+                    <Button 
+                      variant="outline"
+                      onClick={() => setCurrentExtraction(null)}
+                      className="w-full"
+                    >
+                      Tentar Novamente
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  )
 }

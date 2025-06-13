@@ -38,19 +38,29 @@ export function useExtractions() {
   const pollExtraction = async (extractionId: string) => {
     try {
       const response = await fetch(`/api/jira/status/${extractionId}`)
-      if (response.ok) {
-        const status = await response.json()
-        
-        setActiveExtractions(prev => 
-          prev.map(ext => ext.id === extractionId ? status : ext)
-        )
-        
-        return status
+      
+      if (!response.ok) {
+        console.error(`Erro HTTP ${response.status} ao buscar status`)
+        return null
       }
+
+      const contentType = response.headers.get('content-type')
+      if (!contentType || !contentType.includes('application/json')) {
+        console.error('Resposta não é JSON válido')
+        return null
+      }
+
+      const status = await response.json()
+      
+      setActiveExtractions(prev => 
+        prev.map(ext => ext.id === extractionId ? status : ext)
+      )
+      
+      return status
     } catch (error) {
       console.error('Erro ao buscar status:', error)
+      return null
     }
-    return null
   }
 
   useEffect(() => {

@@ -1,14 +1,15 @@
 // app/api/jira/extract-sync/route.ts
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { processJiraIssue, reorganizeData } from '@/lib/jira-utils'
-import * as XLSX from 'xlsx'
 
 export async function POST(request: NextRequest) {
   const encoder = new TextEncoder()
   
   const stream = new ReadableStream({
     async start(controller) {
+      let extractionId: string | null = null
+      
       try {
         const { startDate, endDate, configuration } = await request.json()
 
@@ -25,11 +26,38 @@ export async function POST(request: NextRequest) {
         if (!configuration.jira_url || !configuration.jira_email || !configuration.jira_token) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({
             type: 'error',
-            message: 'Configuração do Jira incompleta'
+            message: 'Configuração do Jira incompleta. Verifique suas credenciais nas configurações.'
           })}\n\n`))
           controller.close()
           return
         }
+
+        // Criar registro de extração imediatamente
+        const { data: extraction, error: extractionError } = await supabase
+          .from('extractions')
+          .insert({
+            start_date: startDate,
+            end_date: endDate,
+            total_issues: 0,
+            status: 'processing',
+            progress: 0,
+            current_step: 'Iniciando extração...',
+            created_at: new Date().toISOString()
+          })
+          .select()
+          .single()
+
+        if (extractionError) {
+          console.error('Erro ao criar extração:', extractionError)
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+            type: 'error',
+            message: 'Erro ao inicializar extração no banco de dados'
+          })}\n\n`))
+          controller.close()
+          return
+        }
+
+        extractionId = extraction.id
 
         // Enviar progresso inicial
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({
@@ -38,38 +66,113 @@ export async function POST(request: NextRequest) {
           step: 'Conectando ao Jira...'
         })}\n\n`))
 
-        // Construir JQL
+        // Atualizar status no banco
+        await supabase
+          .from('extractions')
+          .update({ 
+            progress: 5, 
+            current_step: 'Conectando ao Jira...' 
+          })
+          .eq('id', extractionId)
+
+        // Construir JQL e URL
         const jql = `project = LOG AND created >= "${startDate}" AND created <= "${endDate}"`
-        const baseUrl = `${configuration.jira_url}/rest/api/2/search`
+        let baseUrl = configuration.jira_url
+        
+        // Garantir que a URL não termine com barra
+        if (baseUrl.endsWith('/')) {
+          baseUrl = baseUrl.slice(0, -1)
+        }
+        
+        const searchUrl = `${baseUrl}/rest/api/2/search`
         
         // Configurar autenticação
         const auth = Buffer.from(`${configuration.jira_email}:${configuration.jira_token}`).toString('base64')
         const headers = {
           'Authorization': `Basic ${auth}`,
           'Accept': 'application/json',
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'User-Agent': 'Jira-Analytics-Pro/1.0'
         }
 
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({
           type: 'progress',
           progress: 10,
-          step: 'Buscando dados do Jira...'
+          step: 'Testando conexão com o Jira...'
         })}\n\n`))
+
+        // Teste de conectividade primeiro
+        try {
+          const testUrl = `${baseUrl}/rest/api/2/myself`
+          const testResponse = await Promise.race([
+            fetch(testUrl, { headers }),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Timeout de conexão')), 10000)
+            )
+          ]) as Response
+
+          if (!testResponse.ok) {
+            const errorText = await testResponse.text()
+            throw new Error(`Falha na autenticação: ${testResponse.status} - ${errorText}`)
+          }
+
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+            type: 'progress',
+            progress: 15,
+            step: 'Conexão estabelecida! Buscando dados...'
+          })}\n\n`))
+
+        } catch (testError) {
+          console.error('Erro no teste de conectividade:', testError)
+          
+          await supabase
+            .from('extractions')
+            .update({ 
+              status: 'error',
+              error_message: `Erro de conectividade: ${testError instanceof Error ? testError.message : 'Erro desconhecido'}`
+            })
+            .eq('id', extractionId)
+
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+            type: 'error',
+            message: `Erro de conectividade com o Jira: ${testError instanceof Error ? testError.message : 'Erro desconhecido'}`
+          })}\n\n`))
+          controller.close()
+          return
+        }
 
         let allIssues: any[] = []
         let startAt = 0
-        const maxResults = 100
+        const maxResults = 50 // Reduzir para evitar timeouts
 
         // Primeira requisição para obter total
-        const firstUrl = `${baseUrl}?jql=${encodeURIComponent(jql)}&maxResults=${maxResults}&startAt=0&fields=*all`
+        const firstUrl = `${searchUrl}?jql=${encodeURIComponent(jql)}&maxResults=${maxResults}&startAt=0&fields=*all`
         
-        const firstResponse = await fetch(firstUrl, { headers })
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+          type: 'progress',
+          progress: 20,
+          step: 'Executando consulta JQL...'
+        })}\n\n`))
+
+        const firstResponse = await fetch(firstUrl, { 
+          headers
+        })
 
         if (!firstResponse.ok) {
           const errorText = await firstResponse.text()
+          const errorMessage = `Erro na consulta Jira: ${firstResponse.status} - ${errorText}`
+          
+          await supabase
+            .from('extractions')
+            .update({ 
+              status: 'error',
+              error_message: errorMessage
+            })
+            .eq('id', extractionId)
+
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({
             type: 'error',
-            message: `Erro na API do Jira: ${firstResponse.status} - ${errorText}`
+            message: errorMessage
           })}\n\n`))
           controller.close()
           return
@@ -79,105 +182,123 @@ export async function POST(request: NextRequest) {
         allIssues.push(...firstData.issues)
 
         const totalPages = Math.ceil(firstData.total / maxResults)
+        const totalIssues = firstData.total
 
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({
           type: 'progress',
-          progress: 20,
-          step: `Encontradas ${firstData.total} issues. Carregando páginas...`
+          progress: 25,
+          step: `Encontradas ${totalIssues} issues. Carregando dados (${totalPages} páginas)...`
         })}\n\n`))
 
-        // Buscar páginas restantes
+        // Atualizar total no banco
+        await supabase
+          .from('extractions')
+          .update({ 
+            total_issues: totalIssues,
+            progress: 25,
+            current_step: `Carregando ${totalIssues} issues...`
+          })
+          .eq('id', extractionId)
+
+        // Buscar páginas restantes com controle de erro
         for (let page = 1; page < totalPages; page++) {
           startAt = page * maxResults
           
-          const pageUrl = `${baseUrl}?jql=${encodeURIComponent(jql)}&maxResults=${maxResults}&startAt=${startAt}&fields=*all`
+          const pageUrl = `${searchUrl}?jql=${encodeURIComponent(jql)}&maxResults=${maxResults}&startAt=${startAt}&fields=*all`
           
-          const response = await fetch(pageUrl, { headers })
+          try {
+            const response = await fetch(pageUrl, { 
+              headers,
+            })
 
-          if (response.ok) {
-            const data = await response.json()
-            allIssues.push(...data.issues)
+            if (response.ok) {
+              const data = await response.json()
+              allIssues.push(...data.issues)
+            } else {
+              console.warn(`Erro na página ${page + 1}: ${response.status}`)
+              // Continuar com as outras páginas
+            }
+
+            // Atualizar progresso (páginas representam 25% a 60% do progresso)
+            const pageProgress = 25 + ((page / totalPages) * 35)
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              type: 'progress',
+              progress: Math.round(pageProgress),
+              step: `Carregando página ${page + 1}/${totalPages}... (${allIssues.length} issues)`
+            })}\n\n`))
+
+            // Atualizar progresso no banco a cada 5 páginas
+            if (page % 5 === 0) {
+              await supabase
+                .from('extractions')
+                .update({ 
+                  progress: Math.round(pageProgress),
+                  current_step: `Carregando página ${page + 1}/${totalPages}...`
+                })
+                .eq('id', extractionId)
+            }
+
+            // Pequeno delay para evitar rate limiting
+            if (page % 10 === 0) {
+              await new Promise(resolve => setTimeout(resolve, 1000))
+            }
+
+          } catch (pageError) {
+            console.warn(`Erro na página ${page + 1}:`, pageError)
+            // Continuar com as próximas páginas
           }
-
-          // Atualizar progresso (páginas representam 20% a 50% do progresso)
-          const pageProgress = 20 + ((page / totalPages) * 30)
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-            type: 'progress',
-            progress: Math.round(pageProgress),
-            step: `Carregando página ${page + 1}/${totalPages}...`
-          })}\n\n`))
         }
 
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({
           type: 'progress',
-          progress: 50,
-          step: 'Processando dados das issues...'
+          progress: 60,
+          step: `Processando ${allIssues.length} issues extraídas...`
         })}\n\n`))
 
         // Processar dados
         let processedData: any[] = []
         
-        allIssues.forEach((issue, index) => {
+        for (let i = 0; i < allIssues.length; i++) {
           try {
+            const issue = allIssues[i]
             const issueData = processJiraIssue(issue)
             processedData.push(...issueData)
             
-            // Atualizar progresso a cada 100 issues
-            if (index % 100 === 0) {
-              const processProgress = 50 + ((index / allIssues.length) * 20)
+            // Atualizar progresso a cada 50 issues
+            if (i % 50 === 0) {
+              const processProgress = 60 + ((i / allIssues.length) * 20)
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({
                 type: 'progress',
                 progress: Math.round(processProgress),
-                step: `Processando issue ${index + 1}/${allIssues.length}...`
+                step: `Processando issue ${i + 1}/${allIssues.length}...`
               })}\n\n`))
             }
           } catch (processError) {
-            console.error(`Erro ao processar issue ${index}:`, processError)
+            console.error(`Erro ao processar issue ${i}:`, processError)
+            // Continuar com as próximas issues
           }
-        })
+        }
 
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({
           type: 'progress',
-          progress: 70,
-          step: 'Reorganizando dados...'
+          progress: 80,
+          step: 'Reorganizando e validando dados...'
         })}\n\n`))
 
         // Reorganizar dados
         const finalData = reorganizeData(processedData)
         const uniqueLogs = [...new Set(finalData.map(item => item.LOG).filter(log => log))]
+
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({
           type: 'progress',
-          progress: 80,
-          step: 'Salvando no banco de dados...'
+          progress: 85,
+          step: 'Salvando dados no banco...'
         })}\n\n`))
-
-        // Criar registro de extração
-        const { data: extraction, error: extractionError } = await supabase
-          .from('extractions')
-          .insert({
-            start_date: startDate,
-            end_date: endDate,
-            total_issues: uniqueLogs.length,
-            status: 'completed',
-            created_at: new Date().toISOString(),
-            completed_at: new Date().toISOString()
-          })
-          .select()
-          .single()
-
-        if (extractionError) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-            type: 'error',
-            message: 'Erro ao salvar registro de extração'
-          })}\n\n`))
-          controller.close()
-          return
-        }
 
         // Salvar dados processados
         if (finalData.length > 0) {
           const dataToInsert = finalData.map(item => ({
-            extraction_id: extraction.id,
+            extraction_id: extractionId,
             log_key: item.LOG || '',
             status: item.Status || '',
             created_date: parseDate(item['Data de Criação']),
@@ -193,69 +314,74 @@ export async function POST(request: NextRequest) {
             quantidade_kg_recebida: item['Quantidade de KG recebida'] || ''
           }))
 
-          // Inserir em lotes para performance
-          const batchSize = 100
+          // Inserir em lotes menores para performance
+          const batchSize = 50
           for (let i = 0; i < dataToInsert.length; i += batchSize) {
             const batch = dataToInsert.slice(i, i + batchSize)
             
-            await supabase
-              .from('extraction_data')
-              .insert(batch)
+            try {
+              await supabase
+                .from('extraction_data')
+                .insert(batch)
 
-            // Atualizar progresso do salvamento
-            const saveProgress = 80 + ((i / dataToInsert.length) * 15)
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-              type: 'progress',
-              progress: Math.round(saveProgress),
-              step: `Salvando lote ${Math.floor(i/batchSize) + 1}...`
-            })}\n\n`))
+              // Atualizar progresso do salvamento
+              const saveProgress = 85 + ((i / dataToInsert.length) * 10)
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                type: 'progress',
+                progress: Math.round(saveProgress),
+                step: `Salvando lote ${Math.floor(i/batchSize) + 1}/${Math.ceil(dataToInsert.length/batchSize)}...`
+              })}\n\n`))
+            } catch (insertError) {
+              console.error('Erro ao inserir lote:', insertError)
+              // Continuar com os próximos lotes
+            }
           }
         }
 
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({
           type: 'progress',
           progress: 95,
-          step: 'Gerando arquivo Excel...'
+          step: 'Finalizando extração...'
         })}\n\n`))
 
-        // Gerar arquivo Excel
-        const excelData = finalData.map(item => ({
-          LOG: item.LOG || '',
-          Status: item.Status || '',
-          'Data de Criação': item['Data de Criação'] || '',
-          'Tipo de CD': item['Tipo de CD'] || '',
-          'Tipo de Divergencia': item['Tipo de Divergencia'] || '',
-          'Data de Recebimento': item['Data de Recebimento'] || '',
-          Loja: item.Loja || '',
-          Categoria: item.Categoria || '',
-          Material: item.Material || '',
-          'Quantidade Cobrada': item['Quantidade Cobrada'] || '',
-          'Quantidade Recebida': item['Quantidade Recebida'] || '',
-          'Quantidade de KG cobrada': item['Quantidade de KG cobrada'] || '',
-          'Quantidade de KG recebida': item['Quantidade de KG recebida'] || ''
-        }))
+        // Atualizar registro final da extração
+        await supabase
+          .from('extractions')
+          .update({
+            status: 'completed',
+            progress: 100,
+            current_step: 'Concluído',
+            completed_at: new Date().toISOString(),
+            total_issues: uniqueLogs.length
+          })
+          .eq('id', extractionId)
 
-        const worksheet = XLSX.utils.json_to_sheet(excelData)
-        const workbook = XLSX.utils.book_new()
-        XLSX.utils.book_append_sheet(workbook, worksheet, 'Dados Jira')
-
-        // Salvar arquivo temporariamente (você pode implementar upload para storage)
-        const fileName = `jira_extraction_${extraction.id}.xlsx`
-        
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({
           type: 'complete',
           totalIssues: uniqueLogs.length,
-          downloadUrl: `/api/jira/download-extraction/${extraction.id}`,
-          fileName: fileName
+          downloadUrl: `/api/jira/download-extraction/${extractionId}`,
+          fileName: `jira_extraction_${extractionId}.xlsx`
         })}\n\n`))
 
         controller.close()
 
       } catch (error) {
-        console.error('Erro na extração:', error)
+        console.error('Erro geral na extração:', error)
+        
+        // Marcar extração como erro no banco se tivermos o ID
+        if (extractionId) {
+          await supabase
+            .from('extractions')
+            .update({ 
+              status: 'error',
+              error_message: error instanceof Error ? error.message : 'Erro desconhecido'
+            })
+            .eq('id', extractionId)
+        }
+
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({
           type: 'error',
-          message: error instanceof Error ? error.message : 'Erro desconhecido'
+          message: error instanceof Error ? error.message : 'Erro desconhecido na extração'
         })}\n\n`))
         controller.close()
       }
@@ -271,14 +397,16 @@ export async function POST(request: NextRequest) {
   })
 }
 
-// Função auxiliar para converter strings de data
+// Função auxiliar para converter strings de data (melhorada)
 function parseDate(dateString: string): string | null {
   if (!dateString || dateString.trim() === '') return null
   
   try {
+    // Tentar parsing direto primeiro
     const date = new Date(dateString)
     
     if (isNaN(date.getTime())) {
+      // Tentar formato brasileiro DD/MM/YYYY
       const parts = dateString.split('/')
       if (parts.length === 3) {
         const [day, month, year] = parts
@@ -287,6 +415,16 @@ function parseDate(dateString: string): string | null {
           return brDate.toISOString()
         }
       }
+      
+      // Tentar formato americano MM/DD/YYYY
+      if (parts.length === 3) {
+        const [month, day, year] = parts
+        const usDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
+        if (!isNaN(usDate.getTime())) {
+          return usDate.toISOString()
+        }
+      }
+      
       return null
     }
     

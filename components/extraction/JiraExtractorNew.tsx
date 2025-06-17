@@ -106,8 +106,14 @@ export default function JiraExtractorNew() {
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Erro ao extrair dados')
+        const errorData = await response.json().catch(() => ({ error: 'Erro de comunicação' }))
+        throw new Error(errorData.error || `Erro ${response.status}: ${response.statusText}`)
+      }
+
+      // Verificar se é uma resposta de streaming
+      const contentType = response.headers.get('content-type')
+      if (!contentType?.includes('text/event-stream')) {
+        throw new Error('Resposta inesperada do servidor')
       }
 
       // Response é um stream, vamos processar os chunks de progresso
@@ -115,23 +121,33 @@ export default function JiraExtractorNew() {
       const decoder = new TextDecoder()
 
       if (!reader) {
-        throw new Error('Erro ao processar resposta')
+        throw new Error('Erro ao processar resposta do servidor')
       }
 
       let finalResult: ExtractionResult | null = null
+      let buffer = ''
 
       while (true) {
         const { done, value } = await reader.read()
         
         if (done) break
 
-        const chunk = decoder.decode(value)
-        const lines = chunk.split('\n').filter(line => line.trim())
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        
+        // Manter a última linha incompleta no buffer
+        buffer = lines.pop() || ''
 
         for (const line of lines) {
+          const trimmedLine = line.trim()
+          if (!trimmedLine) continue
+
           try {
-            if (line.startsWith('data: ')) {
-              const data = JSON.parse(line.slice(6))
+            if (trimmedLine.startsWith('data: ')) {
+              const dataStr = trimmedLine.slice(6)
+              const data = JSON.parse(dataStr)
+              
+              console.log('Dados recebidos:', data)
               
               if (data.type === 'progress') {
                 updateProgress(data.progress, data.step)
@@ -147,11 +163,17 @@ export default function JiraExtractorNew() {
                   success: false,
                   errorMessage: data.message
                 }
+                break
               }
             }
           } catch (parseError) {
-            console.warn('Erro ao parsear chunk:', parseError)
+            console.warn('Erro ao parsear linha:', trimmedLine, parseError)
           }
+        }
+
+        // Se encontramos um erro, parar o loop
+        if (finalResult && !finalResult.success) {
+          break
         }
       }
 
@@ -180,13 +202,16 @@ export default function JiraExtractorNew() {
         }
         
         setResult(finalResult)
+      } else {
+        // Se chegou aqui sem resultado, houve um problema
+        throw new Error('Extração interrompida sem resultado')
       }
 
     } catch (error) {
       console.error('Erro ao extrair dados:', error)
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido'
       
-      toast.error(errorMessage)
+      toast.error(`Falha na extração: ${errorMessage}`)
       setResult({ success: false, errorMessage })
       setExtractionState({ progress: 0, currentStep: '', isExtracting: false })
       

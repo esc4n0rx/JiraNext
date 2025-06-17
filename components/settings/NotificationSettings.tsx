@@ -1,6 +1,7 @@
 // components/settings/NotificationSettings.tsx
 "use client"
 
+import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -8,7 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { useNotifications } from '@/hooks/use-notifications'
 import { useConfig } from '@/hooks/use-config'
-import { Bell, BellOff, CheckCircle, XCircle } from 'lucide-react'
+import { Bell, BellOff, CheckCircle, XCircle, TestTube, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 export default function NotificationSettings() {
   const { 
@@ -20,6 +22,7 @@ export default function NotificationSettings() {
   } = useNotifications()
   
   const { config, saveConfig } = useConfig()
+  const [testing, setTesting] = useState(false)
 
   const handleToggleNotifications = async (enabled: boolean) => {
     if (enabled && permission !== 'granted') {
@@ -32,11 +35,37 @@ export default function NotificationSettings() {
     }
   }
 
-  const testNotification = () => {
-    showNotification('Teste de Notificação', {
-      body: 'Esta é uma notificação de teste do Jira Analytics Pro!',
-      icon: '/favicon.ico'
-    })
+  const testNotification = async () => {
+    if (permission !== 'granted') {
+      toast.error('Permissão para notificações não concedida')
+      return
+    }
+
+    setTesting(true)
+    
+    try {
+      console.log('Iniciando teste de notificação...')
+      
+      const notification = showNotification('🧪 Teste de Notificação', {
+        body: 'Se você está vendo esta mensagem, as notificações estão funcionando perfeitamente!',
+        icon: '/favicon.ico',
+        tag: 'test-notification',
+        requireInteraction: false
+      })
+
+      if (notification) {
+        toast.success('Notificação de teste enviada!')
+        console.log('Notificação de teste criada com sucesso')
+      } else {
+        toast.error('Falha ao criar notificação de teste')
+        console.error('Falha ao criar notificação')
+      }
+    } catch (error) {
+      console.error('Erro no teste de notificação:', error)
+      toast.error('Erro ao testar notificação')
+    } finally {
+      setTesting(false)
+    }
   }
 
   const getPermissionStatus = () => {
@@ -52,7 +81,7 @@ export default function NotificationSettings() {
     switch (permission) {
       case 'granted':
         return (
-          <Badge variant="secondary" className="bg-green-100 text-green-800 flex items-center space-x-1">
+          <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 flex items-center space-x-1">
             <CheckCircle className="h-3 w-3" />
             <span>Permitido</span>
           </Badge>
@@ -94,6 +123,21 @@ export default function NotificationSettings() {
           {getPermissionStatus()}
         </div>
 
+        {/* Debug info - remover em produção */}
+        <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <details className="text-sm">
+            <summary className="cursor-pointer font-medium text-blue-800 dark:text-blue-200">
+              Informações de Debug
+            </summary>
+            <div className="mt-2 space-y-1 text-blue-700 dark:text-blue-300">
+              <p>• Suporte: {isSupported ? '✅ Sim' : '❌ Não'}</p>
+              <p>• Permissão: {permission}</p>
+              <p>• Configuração: {config.notifications ? '✅ Habilitada' : '❌ Desabilitada'}</p>
+              <p>• Service Worker: {'serviceWorker' in navigator ? '✅ Suportado' : '❌ Não suportado'}</p>
+            </div>
+          </details>
+        </div>
+
         {/* Toggle principal */}
         <div className="flex items-center justify-between">
           <div className="space-y-0.5">
@@ -118,7 +162,11 @@ export default function NotificationSettings() {
               className="w-full"
               variant="outline"
             >
-              <Bell className="h-4 w-4 mr-2" />
+              {isRequesting ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Bell className="h-4 w-4 mr-2" />
+              )}
               {isRequesting ? 'Solicitando Permissão...' : 'Solicitar Permissão'}
             </Button>
           )}
@@ -126,21 +174,30 @@ export default function NotificationSettings() {
           {permission === 'granted' && (
             <Button
               onClick={testNotification}
+              disabled={testing}
               variant="outline"
               className="w-full"
             >
-              <Bell className="h-4 w-4 mr-2" />
-              Testar Notificação
+              {testing ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <TestTube className="h-4 w-4 mr-2" />
+              )}
+              {testing ? 'Enviando...' : 'Testar Notificação'}
             </Button>
           )}
 
           {permission === 'denied' && (
             <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
               <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                <strong>Permissão negada:</strong> Para habilitar notificações, 
-                clique no ícone de cadeado na barra de endereços e permita notificações, 
-                depois recarregue a página.
+                <strong>Permissão negada:</strong> Para habilitar notificações:
               </p>
+              <ol className="mt-2 text-sm text-yellow-700 dark:text-yellow-300 list-decimal list-inside space-y-1">
+                <li>Clique no ícone de cadeado/configurações na barra de endereços</li>
+                <li>Procure por "Notificações" e altere para "Permitir"</li>
+                <li>Recarregue esta página</li>
+                <li>Clique em "Solicitar Permissão" novamente</li>
+              </ol>
             </div>
           )}
 
@@ -148,7 +205,7 @@ export default function NotificationSettings() {
             <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
               <p className="text-sm text-red-800 dark:text-red-200">
                 <strong>Não suportado:</strong> Seu navegador não suporta notificações push. 
-                Considere usar um navegador mais recente.
+                Considere usar uma versão mais recente do Chrome, Firefox, Safari ou Edge.
               </p>
             </div>
           )}
@@ -157,12 +214,13 @@ export default function NotificationSettings() {
         {/* Informações adicionais */}
         <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
           <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-2">
-            Sobre as Notificações
+            Como funcionam as notificações
           </h4>
           <ul className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
-            <li>• Você será notificado quando extrações terminarem</li>
-            <li>• Funciona mesmo com a página fechada</li>
-            <li>• Clique na notificação para voltar ao app</li>
+            <li>• Você será notificado quando extrações terminarem (sucesso ou erro)</li>
+            <li>• Funciona mesmo com a aba/página fechada</li>
+            <li>• Clique na notificação para voltar ao aplicativo</li>
+            <li>• As notificações são locais (não enviamos dados para servidores externos)</li>
             <li>• Pode ser desabilitado a qualquer momento</li>
           </ul>
         </div>

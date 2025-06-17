@@ -1,38 +1,46 @@
 // public/sw.js
-self.addEventListener('push', function(event) {
-  if (event.data) {
-    const data = event.data.json()
-    
-    const options = {
-      body: data.body,
-      icon: '/favicon.ico',
-      badge: '/favicon.ico',
-      tag: data.tag || 'default',
-      requireInteraction: true,
-      actions: [
-        {
-          action: 'view',
-          title: 'Visualizar'
-        },
-        {
-          action: 'dismiss',
-          title: 'Dispensar'
-        }
-      ]
-    }
+const CACHE_NAME = 'jira-analytics-v1'
 
-    event.waitUntil(
-      self.registration.showNotification(data.title, options)
-    )
-  }
+// Install event
+self.addEventListener('install', event => {
+  console.log('Service Worker instalado')
+  self.skipWaiting()
 })
 
-self.addEventListener('notificationclick', function(event) {
+// Activate event
+self.addEventListener('activate', event => {
+  console.log('Service Worker ativado')
+  event.waitUntil(self.clients.claim())
+})
+
+// Push event (para notificações push futuras)
+self.addEventListener('push', event => {
+  console.log('Push event recebido:', event)
+  
+  const options = {
+    body: 'Extração do Jira concluída!',
+    icon: '/favicon.ico',
+    badge: '/favicon.ico',
+    tag: 'jira-extraction'
+  }
+
+  if (event.data) {
+    const data = event.data.json()
+    options.body = data.body || options.body
+    options.tag = data.tag || options.tag
+  }
+
+  event.waitUntil(
+    self.registration.showNotification('Jira Analytics Pro', options)
+  )
+})
+
+// Notification click event
+self.addEventListener('notificationclick', event => {
+  console.log('Notificação clicada:', event)
   event.notification.close()
 
-  if (event.action === 'view' || !event.action) {
-    event.waitUntil(
-      clients.openWindow('/')
-    )
-  }
+  event.waitUntil(
+    clients.openWindow('/')
+  )
 })

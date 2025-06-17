@@ -21,12 +21,15 @@ export function useNotifications() {
 
   // Verificar suporte e permissão inicial
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      setState(prev => ({
-        ...prev,
-        isSupported: true,
-        permission: Notification.permission as NotificationPermission
-      }))
+    if (typeof window !== 'undefined') {
+      const isSupported = 'Notification' in window && 'serviceWorker' in navigator
+      const permission = isSupported ? Notification.permission as NotificationPermission : 'denied'
+      
+      setState({
+        isSupported,
+        permission,
+        isRequesting: false
+      })
     }
   }, [])
 
@@ -44,6 +47,15 @@ export function useNotifications() {
     setState(prev => ({ ...prev, isRequesting: true }))
 
     try {
+      // Registrar service worker primeiro se não estiver registrado
+      if ('serviceWorker' in navigator) {
+        try {
+          await navigator.serviceWorker.register('/sw.js')
+        } catch (swError) {
+          console.log('Service worker já registrado ou erro:', swError)
+        }
+      }
+
       const permission = await Notification.requestPermission()
       
       setState(prev => ({
@@ -55,9 +67,10 @@ export function useNotifications() {
       if (permission === 'granted') {
         toast.success('Notificações habilitadas com sucesso!')
         // Enviar notificação de teste
-        showNotification('Notificações Habilitadas', {
+        showNotification('Notificações Habilitadas! 🎉', {
           body: 'Você será notificado quando as extrações terminarem!',
-          icon: '/favicon.ico'
+          icon: '/favicon.ico',
+          tag: 'test-notification'
         })
       } else if (permission === 'denied') {
         toast.error('Permissão para notificações negada')
@@ -78,6 +91,7 @@ export function useNotifications() {
     options?: NotificationOptions
   ): Notification | null => {
     if (!state.isSupported || state.permission !== 'granted') {
+      console.log('Notificações não suportadas ou não permitidas')
       return null
     }
 
@@ -85,17 +99,38 @@ export function useNotifications() {
       const notification = new Notification(title, {
         icon: '/favicon.ico',
         badge: '/favicon.ico',
+        requireInteraction: false,
+        silent: false,
         ...options
       })
 
-      // Auto-fechar após 5 segundos
-      setTimeout(() => {
+      // Configurar eventos da notificação
+      notification.onclick = (event) => {
+        event.preventDefault()
+        window.focus()
         notification.close()
-      }, 5000)
+        
+        // Se tiver URL personalizada nos options, navegar
+        if (options?.data?.url) {
+          window.open(options.data.url, '_blank')
+        }
+      }
+
+      notification.onerror = (error) => {
+        console.error('Erro na notificação:', error)
+      }
+
+      // Auto-fechar após 10 segundos se não for requireInteraction
+      if (!options?.requireInteraction) {
+        setTimeout(() => {
+          notification.close()
+        }, 10000)
+      }
 
       return notification
     } catch (error) {
       console.error('Erro ao criar notificação:', error)
+      toast.error('Erro ao exibir notificação')
       return null
     }
   }, [state.isSupported, state.permission])
@@ -107,20 +142,22 @@ export function useNotifications() {
     endDate: string
   ) => {
     return showNotification('Extração do Jira Concluída! 🎉', {
-      body: `${totalIssues} registros extraídos (${startDate} - ${endDate})`,
+      body: `${totalIssues} registros extraídos (${startDate} - ${endDate})\nClique para ver os resultados`,
       icon: '/favicon.ico',
       tag: 'extraction-completed',
-      requireInteraction: true
+      requireInteraction: true,
+      data: { url: window.location.origin }
     })
   }, [showNotification])
 
   // Notificação para erro na extração
   const notifyExtractionError = useCallback((errorMessage: string) => {
     return showNotification('Erro na Extração ❌', {
-      body: `Falha durante o processamento: ${errorMessage}`,
+      body: `Falha durante o processamento: ${errorMessage}\nClique para tentar novamente`,
       icon: '/favicon.ico',
       tag: 'extraction-error',
-      requireInteraction: true
+      requireInteraction: true,
+      data: { url: window.location.origin }
     })
   }, [showNotification])
 

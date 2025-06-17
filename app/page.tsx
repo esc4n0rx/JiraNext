@@ -18,7 +18,6 @@ import {
   Settings,
   Zap
 } from 'lucide-react'
-import ActiveExtractions from '@/components/extraction/ActiveExtractions'
 
 const TabTriggerWithIcon = ({ value, icon: Icon, children }: {
   value: string
@@ -88,12 +87,11 @@ export default function HomePage() {
                 </TabTriggerWithIcon>
               </TabsList>
 
-              <TabsContent value="extract" className="space-y-6">
+              {/* <TabsContent value="extract" className="space-y-6">
                 <div className="flex justify-center">
                   <JiraExtractorNew />
                 </div>
-                <ActiveExtractions />
-              </TabsContent>
+              </TabsContent> */}
 
               <TabsContent value="dashboard" className="space-y-6">
                 <DashboardStats />

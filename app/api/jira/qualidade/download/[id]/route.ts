@@ -3,14 +3,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 
-// Assinatura da função GET corrigida
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Aguardar params antes de usar
+    const { id } = await params;
+    
     // Convertendo o ID da URL (string) para número (int4)
-    const extractionId = parseInt(params.id, 10);
+    const extractionId = parseInt(id, 10);
     if (isNaN(extractionId)) {
       return NextResponse.json({ error: 'ID de extração inválido.' }, { status: 400 });
     }
@@ -18,7 +20,7 @@ export async function GET(
     const { data, error } = await supabase
       .from('extraction_qualidade')
       .select('*')
-      .eq('extraction_id', extractionId); // Usando o ID numérico
+      .eq('extraction_id', extractionId);
 
     if (error) throw error;
     if (!data || data.length === 0) return NextResponse.json({ error: 'Nenhum dado encontrado.' }, { status: 404 });

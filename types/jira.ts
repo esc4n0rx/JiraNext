@@ -10,7 +10,7 @@ export interface JiraConfiguration {
 }
 
 export interface JiraExtraction {
-  id: string
+  id: number
   start_date: string
   end_date: string
   total_issues?: number
@@ -43,4 +43,36 @@ export interface ProcessedIssueData {
   'Quantidade Recebida': string
   'Quantidade de KG cobrada': string
   'Quantidade de KG recebida': string
+}
+
+export interface AvariasProcessedData {
+  'Chave Log': string;
+  'Criado': string;
+  'Criado em': string;
+  'Status': string;
+  'Quem Criou': string;
+  'Loja': string;
+  'Produto': string;
+  'Quantidade': string;
+  'Tipo de Avaria': string;
+}
+
+export interface QualidadeProcessedData {
+  'Log': string;
+  'Criado em': string;
+  'Status': string;
+  'Data Prox. Inventário': string;
+  'Quem Abriu': string;
+  'Loja': string;
+  'Produto': string;
+  'Quantidade': string;
+}
+
+export interface DevolucoesProcessedData {
+  'Chave': string;
+  'Criado em': string;
+  'Quem Abriu': string;
+  'Loja': string;
+  'Tipo': string;
+  'Status': string;
 }

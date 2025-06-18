@@ -1,5 +1,5 @@
 // lib/jira-utils.ts
-import { JiraIssue, ProcessedIssueData } from '@/types/jira'
+import { JiraIssue, ProcessedIssueData,AvariasProcessedData,QualidadeProcessedData, DevolucoesProcessedData} from '@/types/jira'
 
 export const CUSTOM_FIELD_NAMES = {
   // Embalagem
@@ -36,6 +36,121 @@ export const CUSTOM_FIELD_NAMES = {
   "customfield_11092": "PRODUCAO 3",
   "customfield_11093": "PRODUCAO 4",
   "customfield_11094": "PRODUCAO 5"
+}
+
+const AVARIAS_PRODUCT_FIELDS = {
+  "customfield_11090": "customfield_10315", // Produto 1 -> Quantidade 1
+  "customfield_11091": "customfield_10329", // Produto 2 -> Quantidade 2
+  "customfield_11092": "customfield_10346", // Produto 3 -> Quantidade 3
+  "customfield_11093": "customfield_10347", // Produto 4 -> Quantidade 4
+  "customfield_11094": "customfield_10349", // Produto 5 -> Quantidade 5 (ID da quantidade para o produto 5 inferido)
+};
+
+const QUALIDADE_PRODUCT_FIELDS = {
+  "customfield_11090": "customfield_10315", // Produto 1 -> Quantidade 1
+  "customfield_11091": "customfield_10329", // Produto 2 -> Quantidade 2
+  "customfield_11092": "customfield_10346", // Produto 3 -> Quantidade 3
+  "customfield_11093": "customfield_10347", // Produto 4 -> Quantidade 4
+  "customfield_11094": "customfield_10348", // Produto 5 -> Quantidade 5
+};
+
+/**
+ * Processa um issue do Jira para o formato de Avarias.
+ * Cria uma linha para cada produto encontrado no issue.
+ */
+export function processAvariasIssue(issue: JiraIssue): AvariasProcessedData[] {
+  const processedData: AvariasProcessedData[] = [];
+
+  const commonData = {
+    'Chave Log': issue.key,
+    'Criado em': issue.fields.created || 'N/A',
+    'Status': issue.fields.status?.name || 'N/A',
+    'Criado': issue.fields.customfield_10475 ? new Date(issue.fields.customfield_10475).toLocaleDateString('pt-BR') : '',
+    'Quem Criou': issue.fields.reporter?.emailAddress || 'N/A',
+    'Loja': safeGetFieldValue(issue.fields.customfield_10169),
+    'Tipo de Avaria': safeGetFieldValue(issue.fields.customfield_10288),
+  };
+
+  for (const [productField, quantityField] of Object.entries(AVARIAS_PRODUCT_FIELDS)) {
+    const productValue = issue.fields[productField];
+    const quantityValue = issue.fields[quantityField];
+
+    if (productValue && quantityValue) {
+      processedData.push({
+        ...commonData,
+        'Produto': safeGetFieldValue(productValue),
+        'Quantidade': safeGetFieldValue(quantityValue),
+      });
+    }
+  }
+
+  if (processedData.length === 0) {
+      processedData.push({
+        ...commonData,
+        'Produto': 'Nenhum produto informado',
+        'Quantidade': '0',
+      });
+  }
+
+  return processedData;
+}
+
+/**
+ * Processa um issue do Jira para o formato de Devoluções.
+ */
+export function processDevolucoesIssue(issue: JiraIssue): DevolucoesProcessedData {
+  return {
+    'Chave': issue.key,
+    'Criado em': issue.fields.created || 'N/A',
+    'Quem Abriu': issue.fields.reporter?.emailAddress || 'N/A',
+    'Loja': safeGetFieldValue(issue.fields.customfield_10169),
+    'Tipo': safeGetFieldValue(issue.fields.customfield_11218),
+    'Status': issue.fields.status?.name || 'N/A',
+  };
+}
+
+
+/**
+ * Processa um issue do Jira para o formato de Qualidade.
+ * Cria uma linha para cada produto encontrado no issue.
+ */
+export function processQualidadeIssue(issue: JiraIssue): QualidadeProcessedData[] {
+  const processedData: QualidadeProcessedData[] = [];
+
+  const commonData = {
+    'Log': issue.key,
+    'Criado em': issue.fields.created || 'N/A',
+    'Status': issue.fields.status?.name || 'N/A',
+    'Data Prox. Inventário': issue.fields.customfield_10475 ? new Date(issue.fields.customfield_10475).toLocaleDateString('pt-BR') : 'N/A',
+    'Quem Abriu': issue.fields.reporter?.emailAddress || 'N/A',
+    'Loja': safeGetFieldValue(issue.fields.customfield_10169),
+  };
+
+  let productsFound = 0;
+  for (const [productField, quantityField] of Object.entries(QUALIDADE_PRODUCT_FIELDS)) {
+    const productValue = issue.fields[productField];
+    const quantityValue = issue.fields[quantityField];
+
+    if (productValue) {
+      productsFound++;
+      processedData.push({
+        ...commonData,
+        'Produto': safeGetFieldValue(productValue),
+        'Quantidade': safeGetFieldValue(quantityValue) || '0',
+      });
+    }
+  }
+
+  // Se nenhum produto foi encontrado no chamado, retorna uma linha única com os dados comuns.
+  if (productsFound === 0) {
+      processedData.push({
+        ...commonData,
+        'Produto': 'Nenhum produto informado',
+        'Quantidade': '0',
+      });
+  }
+
+  return processedData;
 }
 
 export function safeGetFieldValue(field: any): string {

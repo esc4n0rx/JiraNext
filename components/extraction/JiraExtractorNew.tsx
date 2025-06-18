@@ -203,7 +203,6 @@ export default function JiraExtractorNew() {
         
         setResult(finalResult)
       } else {
-        // Se chegou aqui sem resultado, houve um problema
         throw new Error('Extração interrompida sem resultado')
       }
 

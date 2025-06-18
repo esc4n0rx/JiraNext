@@ -6,7 +6,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DashboardProvider } from '@/contexts/DashboardContext'
 import DashboardStats from '@/components/dashboard/DashboardStats'
 import StatusChart from '@/components/dashboard/StatusChart'
-import JiraExtractorNew from '@/components/extraction/JiraExtractorNew'
+// Importando o novo contêiner
+import JiraExtractorContainer from '@/components/extraction/JiraExtractorContainer'
 import NotificationPermissionRequest from '@/components/notifications/NotificationPermissionRequest'
 import ReportsSection from '@/components/reports/ReportsSection'
 import SettingsPanel from '@/components/settings/SettingsPanel'
@@ -87,12 +88,6 @@ export default function HomePage() {
                 </TabTriggerWithIcon>
               </TabsList>
 
-              {/* <TabsContent value="extract" className="space-y-6">
-                <div className="flex justify-center">
-                  <JiraExtractorNew />
-                </div>
-              </TabsContent> */}
-
               <TabsContent value="dashboard" className="space-y-6">
                 <DashboardStats />
                 <div className="grid lg:grid-cols-3 gap-6">
@@ -120,7 +115,8 @@ export default function HomePage() {
 
               <TabsContent value="extract">
                 <div className="flex justify-center">
-                  <JiraExtractorNew />
+                  {/* SUBSTITUIÇÃO DO COMPONENTE ANTIGO PELO NOVO */}
+                  <JiraExtractorContainer />
                 </div>
               </TabsContent>
 

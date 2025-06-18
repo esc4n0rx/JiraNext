@@ -3,14 +3,22 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+// Assinatura da função GET corrigida
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
-    const { id } = params;
+    // Convertendo o ID da URL (string) para número (int4)
+    const extractionId = parseInt(params.id, 10);
+    if (isNaN(extractionId)) {
+      return NextResponse.json({ error: 'ID de extração inválido.' }, { status: 400 });
+    }
 
     const { data, error } = await supabase
       .from('extraction_devolucoes')
       .select('*')
-      .eq('extraction_id', id);
+      .eq('extraction_id', extractionId); // Usando o ID numérico
 
     if (error) throw error;
     if (!data || data.length === 0) return NextResponse.json({ error: 'Nenhum dado encontrado.' }, { status: 404 });
@@ -27,17 +35,15 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     const worksheet = XLSX.utils.json_to_sheet(excelData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Devoluções');
-
     const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' });
 
     return new NextResponse(buffer, {
       status: 200,
       headers: {
-        'Content-Disposition': `attachment; filename="relatorio_devolucoes_${id}.xlsx"`,
+        'Content-Disposition': `attachment; filename="relatorio_devolucoes_${extractionId}.xlsx"`,
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       },
     });
-
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro interno do servidor';
     return NextResponse.json({ error: errorMessage }, { status: 500 });

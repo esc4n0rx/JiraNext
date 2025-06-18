@@ -1,30 +1,32 @@
 // app/api/jira/status/[id]/route.ts
-import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { NextRequest, NextResponse } from 'next/server';
+import { supabase } from '@/lib/supabase';
 
+// Assinatura da função GET corrigida
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    // Aguardar params antes de usar
-    const { id } = await params
+    // Convertendo o ID da URL (string) para número (int4)
+    const extractionId = parseInt(params.id, 10);
+    if (isNaN(extractionId)) {
+      return NextResponse.json({ error: 'ID de extração inválido.' }, { status: 400 });
+    }
 
-    // Buscar extração
     const { data: extraction, error } = await supabase
       .from('extractions')
       .select('*')
-      .eq('id', id)
-      .single()
+      .eq('id', extractionId) // Usando o ID numérico
+      .single();
 
     if (error || !extraction) {
       return NextResponse.json(
         { error: 'Extração não encontrada' },
         { status: 404 }
-      )
+      );
     }
 
-    // Retornar status da extração
     const response = {
       id: extraction.id,
       status: extraction.status,
@@ -37,15 +39,15 @@ export async function GET(
       completedAt: extraction.completed_at,
       errorMessage: extraction.error_message,
       filePath: extraction.file_path
-    }
+    };
 
-    return NextResponse.json(response)
+    return NextResponse.json(response);
 
   } catch (error) {
-    console.error('Erro ao buscar status da extração:', error)
+    console.error('Erro ao buscar status da extração:', error);
     return NextResponse.json(
       { error: 'Erro interno do servidor' },
       { status: 500 }
-    )
+    );
   }
 }

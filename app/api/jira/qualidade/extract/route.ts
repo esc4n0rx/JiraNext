@@ -58,8 +58,8 @@ export async function POST(request: NextRequest) {
             const dataToInsert = processedData.map(item => ({
                 extraction_id: extractionId,
                 log_key: item['Log'],
-                criado_em: item['Criado em'], // Novo campo
-                status: item['Status'],       // Novo campo
+                criado_em: item['Criado em'], 
+                status: item['Status'],   
                 data_prox_inventario: item['Data Prox. Inventário'],
                 reporter: item['Quem Abriu'],
                 loja: item['Loja'],

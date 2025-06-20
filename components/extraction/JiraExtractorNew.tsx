@@ -10,14 +10,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Progress } from '@/components/ui/progress'
-import { Badge } from '@/components/ui/badge'
-import { Download, CheckCircle, X, Clock, RefreshCw, Circle } from 'lucide-react'
+import { Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { useDashboard } from '@/contexts/DashboardContext'
 import { useConfig } from '@/hooks/use-config'
 import { useNotifications } from '@/hooks/use-notifications'
-import ExtractionAnimation from './ExtractionAnimation'
+import AsyncExtractionManager from './AsyncExtractionManager'
+import { useCustomToast } from '@/hooks/use-custom-toast'
 
 const extractionSchema = z.object({
   startDate: z.string().min(1, 'Data de início é obrigatória'),
@@ -32,31 +31,13 @@ const extractionSchema = z.object({
 
 type ExtractionFormData = z.infer<typeof extractionSchema>
 
-interface ExtractionProgress {
-  progress: number
-  currentStep: string
-  isExtracting: boolean
-}
-
-interface ExtractionResult {
-  success: boolean
-  totalIssues?: number
-  downloadUrl?: string
-  errorMessage?: string
-  fileName?: string
-}
-
 export default function JiraExtractorNew() {
   const { refreshDashboard } = useDashboard()
   const { config } = useConfig()
   const { notifyExtractionCompleted, notifyExtractionError } = useNotifications()
   
-  const [extractionState, setExtractionState] = useState<ExtractionProgress>({
-    progress: 0,
-    currentStep: '',
-    isExtracting: false
-  })
-  const [result, setResult] = useState<ExtractionResult | null>(null)
+  const [isExtracting, setIsExtracting] = useState(false)
+  const [extractionData, setExtractionData] = useState<any>(null)
 
   // Calcular datas padrão (últimos 30 dias)
   const today = new Date()
@@ -71,184 +52,81 @@ export default function JiraExtractorNew() {
     }
   })
 
-  const updateProgress = (progress: number, step: string) => {
-    setExtractionState({
-      progress: Math.min(100, Math.max(0, progress)),
-      currentStep: step,
-      isExtracting: true
-    })
-  }
-
   const onSubmit = async (data: ExtractionFormData) => {
     if (!config.jiraDomain || !config.jiraToken || !config.jiraEmail) {
-      toast.error('Configure suas credenciais do Jira primeiro')
+      toast.error('Configure suas credenciais do Jira primeiro', {
+        description: 'Acesse a aba Configurações para inserir suas credenciais'
+      })
       return
     }
 
-    try {
-      setResult(null)
-      setExtractionState({ progress: 0, currentStep: 'Iniciando extração...', isExtracting: true })
-
-      const response = await fetch('/api/jira/extract-sync', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          startDate: data.startDate,
-          endDate: data.endDate,
-          configuration: {
-            jira_url: config.jiraDomain,
-            jira_email: config.jiraEmail,
-            jira_token: config.jiraToken
-          }
-        })
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Erro de comunicação' }))
-        throw new Error(errorData.error || `Erro ${response.status}: ${response.statusText}`)
+    setIsExtracting(true)
+    setExtractionData({
+      startDate: data.startDate,
+      endDate: data.endDate,
+      configuration: {
+        jira_url: config.jiraDomain,
+        jira_email: config.jiraEmail,
+        jira_token: config.jiraToken
       }
-
-      // Verificar se é uma resposta de streaming
-      const contentType = response.headers.get('content-type')
-      if (!contentType?.includes('text/event-stream')) {
-        throw new Error('Resposta inesperada do servidor')
-      }
-
-      // Response é um stream, vamos processar os chunks de progresso
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-
-      if (!reader) {
-        throw new Error('Erro ao processar resposta do servidor')
-      }
-
-      let finalResult: ExtractionResult | null = null
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        
-        // Manter a última linha incompleta no buffer
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          const trimmedLine = line.trim()
-          if (!trimmedLine) continue
-
-          try {
-            if (trimmedLine.startsWith('data: ')) {
-              const dataStr = trimmedLine.slice(6)
-              const data = JSON.parse(dataStr)
-              
-              console.log('Dados recebidos:', data)
-              
-              if (data.type === 'progress') {
-                updateProgress(data.progress, data.step)
-              } else if (data.type === 'complete') {
-                finalResult = {
-                  success: true,
-                  totalIssues: data.totalIssues,
-                  downloadUrl: data.downloadUrl,
-                  fileName: data.fileName
-                }
-              } else if (data.type === 'error') {
-                finalResult = {
-                  success: false,
-                  errorMessage: data.message
-                }
-                break
-              }
-            }
-          } catch (parseError) {
-            console.warn('Erro ao parsear linha:', trimmedLine, parseError)
-          }
-        }
-
-        // Se encontramos um erro, parar o loop
-        if (finalResult && !finalResult.success) {
-          break
-        }
-      }
-
-      setExtractionState({ progress: 100, currentStep: '', isExtracting: false })
-
-      if (finalResult) {
-        if (finalResult.success) {
-          toast.success(`Extração concluída! ${finalResult.totalIssues} registros processados`)
-          
-          // Enviar notificação
-          if (config.notifications) {
-            notifyExtractionCompleted(
-              finalResult.totalIssues || 0,
-              new Date(data.startDate).toLocaleDateString('pt-BR'),
-              new Date(data.endDate).toLocaleDateString('pt-BR')
-            )
-          }
-          
-          refreshDashboard()
-        } else {
-          toast.error(`Erro na extração: ${finalResult.errorMessage}`)
-          
-          if (config.notifications) {
-            notifyExtractionError(finalResult.errorMessage || 'Erro desconhecido')
-          }
-        }
-        
-        setResult(finalResult)
-      } else {
-        throw new Error('Extração interrompida sem resultado')
-      }
-
-    } catch (error) {
-      console.error('Erro ao extrair dados:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido'
-      
-      toast.error(`Falha na extração: ${errorMessage}`)
-      setResult({ success: false, errorMessage })
-      setExtractionState({ progress: 0, currentStep: '', isExtracting: false })
-      
-      if (config.notifications) {
-        notifyExtractionError(errorMessage)
-      }
-    }
+    })
   }
 
-  const downloadFile = async () => {
-    if (!result?.downloadUrl) return
-
-    try {
-      const response = await fetch(result.downloadUrl)
-      
-      if (!response.ok) {
-        throw new Error('Erro ao baixar arquivo')
-      }
-
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.style.display = 'none'
-      a.href = url
-      a.download = result.fileName || 'jira_extraction.xlsx'
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
-
-      toast.success('Arquivo baixado com sucesso!')
-    } catch (error) {
-      toast.error('Erro ao baixar arquivo')
+  const handleJobComplete = (result: any) => {
+    setIsExtracting(false)
+    
+    // Notificação com informações do download
+    if (config.notifications) {
+      notifyExtractionCompleted(
+        result.totalIssues || 0,
+        new Date(extractionData.startDate).toLocaleDateString('pt-BR'),
+        new Date(extractionData.endDate).toLocaleDateString('pt-BR')
+      )
     }
+    
+    // Refresh do dashboard
+    refreshDashboard()
+    
+    // Toast adicional com informações do resultado
+    toast.success(
+      `🎉 Extração finalizada! ${result.totalIssues} issues processadas. ${result.processedRecords || 0} registros gerados.`,
+      {
+        duration: 5000,
+        action: {
+          label: 'Ver Dashboard',
+          onClick: () => {
+            // Poderia navegar para a aba dashboard
+            console.log('Navegando para dashboard...')
+          }
+        }
+      }
+    )
+  }
+
+  const handleJobError = (error: string) => {
+    setIsExtracting(false)
+    
+    if (config.notifications) {
+      notifyExtractionError(error)
+    }
+    
+    // Toast de erro mais detalhado
+    toast.error(
+      `❌ Falha na extração: ${error}`,
+      {
+        duration: 8000,
+        action: {
+          label: 'Tentar Novamente',
+          onClick: () => {
+            setIsExtracting(false)
+            setExtractionData(null)
+          }
+        }
+      }
+    )
   }
 
   const hasValidConfig = config.jiraDomain && config.jiraToken && config.jiraEmail
-  const { isExtracting } = extractionState
 
   return (
     <motion.div
@@ -256,7 +134,6 @@ export default function JiraExtractorNew() {
       animate={{ opacity: 1, y: 0 }}
       className="w-full max-w-2xl mx-auto space-y-6"
     >
-      {/* Card principal */}
       <Card className="border-0 shadow-xl bg-gradient-to-br from-white to-gray-50 dark:from-gray-900 dark:to-gray-800">
         <CardHeader className="text-center pb-4">
           <CardTitle className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
@@ -282,7 +159,7 @@ export default function JiraExtractorNew() {
             </motion.div>
           )}
 
-          {!isExtracting && !result && (
+          {!isExtracting && (
             <motion.form
               onSubmit={form.handleSubmit(onSubmit)}
               className="space-y-6"
@@ -366,97 +243,19 @@ export default function JiraExtractorNew() {
               </Button>
             </motion.form>
           )}
+
+          {/* Gerenciador de Extração Assíncrona com Download Automático */}
+          {isExtracting && extractionData && (
+            <AsyncExtractionManager
+              jobType="divergencias"
+              jobData={extractionData}
+              onJobComplete={handleJobComplete}
+              onJobError={handleJobError}
+              autoDownload={true} // Habilitar download automático
+            />
+          )}
         </CardContent>
       </Card>
-
-      {/* Animação de extração */}
-      <AnimatePresence>
-        {isExtracting && (
-          <ExtractionAnimation
-            progress={extractionState.progress}
-            currentStep={extractionState.currentStep}
-            isExtracting={isExtracting}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Resultado */}
-      <AnimatePresence>
-        {result && !isExtracting && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-          >
-            <Card className="border-0 shadow-lg">
-              <CardHeader className="pb-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    {result.success ? (
-                      <CheckCircle className="h-6 w-6 text-green-500" />
-                    ) : (
-                      <Circle className="h-6 w-6 text-red-500" />
-                    )}
-                    <h3 className="text-lg font-semibold">
-                      {result.success ? 'Extração Concluída' : 'Erro na Extração'}
-                    </h3>
-                  </div>
-                  <Badge variant={result.success ? "secondary" : "destructive"} className={result.success ? "bg-green-100 text-green-800" : ""}>
-                    {result.success ? 'Sucesso' : 'Erro'}
-                  </Badge>
-                </div>
-              </CardHeader>
-              
-              <CardContent className="space-y-4">
-                {result.success ? (
-                  <>
-                    <div className="text-center">
-                      <p className="text-green-600 dark:text-green-400 font-medium">
-                        Dados extraídos com sucesso!
-                      </p>
-                      {result.totalIssues && (
-                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                          {result.totalIssues} registros processados
-                        </p>
-                      )}
-                    </div>
-                    
-                    <Button 
-                      onClick={downloadFile}
-                      className="w-full bg-green-600 hover:bg-green-700"
-                    >
-                      <Download className="mr-2 h-4 w-4" />
-                      Baixar Planilha Excel
-                    </Button>
-                  </>
-                ) : (
-                  <div className="text-center">
-                    <p className="text-red-600 dark:text-red-400 font-medium">
-                      Falha na extração
-                    </p>
-                    {result.errorMessage && (
-                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                        {result.errorMessage}
-                      </p>
-                    )}
-                  </div>
-                )}
-                
-                <Button 
-                  variant="outline"
-                  onClick={() => {
-                    setResult(null)
-                    setExtractionState({ progress: 0, currentStep: '', isExtracting: false })
-                  }}
-                  className="w-full"
-                >
-                  Nova Extração
-                </Button>
-              </CardContent>
-            </Card>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </motion.div>
   )
 }

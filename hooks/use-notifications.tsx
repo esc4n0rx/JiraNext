@@ -188,31 +188,50 @@ export function useNotifications() {
     }
   }, [state.isSupported, state.permission])
 
-  // Notificação específica para extração concluída
+  // Notificação específica para extração concluída (melhorada)
   const notifyExtractionCompleted = useCallback((
     totalIssues: number,
     startDate: string,
-    endDate: string
+    endDate: string,
+    downloadUrl?: string
   ) => {
     console.log('Enviando notificação de extração concluída')
-    return showNotification('Extração do Jira Concluída! 🎉', {
-      body: `${totalIssues} registros extraídos (${startDate} - ${endDate})\nClique para ver os resultados`,
+    return showNotification('🎉 Extração do Jira Concluída!', {
+      body: `${totalIssues} registros extraídos (${startDate} - ${endDate})\n📥 Download automático iniciado!\nClique para ver os resultados`,
       icon: '/favicon.ico',
       tag: 'extraction-completed',
       requireInteraction: true,
-      data: { url: window.location.origin }
+      data: { 
+        url: window.location.origin,
+        downloadUrl 
+      },
+      // 'actions' property removed because it is not supported in NotificationOptions
     })
   }, [showNotification])
 
-  // Notificação para erro na extração
+  // Notificação para erro na extração (melhorada)
   const notifyExtractionError = useCallback((errorMessage: string) => {
     console.log('Enviando notificação de erro na extração')
-    return showNotification('Erro na Extração ❌', {
-      body: `Falha durante o processamento: ${errorMessage}\nClique para tentar novamente`,
+    return showNotification('❌ Erro na Extração', {
+      body: `Falha durante o processamento:\n${errorMessage}\n\nClique para tentar novamente`,
       icon: '/favicon.ico',
       tag: 'extraction-error',
       requireInteraction: true,
-      data: { url: window.location.origin }
+      data: { url: window.location.origin },
+      // 'actions' property removed because it is not supported in NotificationOptions
+      silent: false
+    })
+  }, [showNotification])
+
+  // Notificação para download concluído
+  const notifyDownloadCompleted = useCallback((fileName: string, downloadUrl?: string) => {
+    console.log('Enviando notificação de download concluído')
+    return showNotification('✅ Download Concluído', {
+      body: `O arquivo ${fileName} foi baixado com sucesso.`,
+      icon: '/favicon.ico',
+      tag: 'download-completed',
+      requireInteraction: false,
+      data: { url: downloadUrl || window.location.origin }
     })
   }, [showNotification])
 
@@ -221,6 +240,7 @@ export function useNotifications() {
     requestPermission,
     showNotification,
     notifyExtractionCompleted,
-    notifyExtractionError
+    notifyExtractionError,
+    notifyDownloadCompleted
   }
 }

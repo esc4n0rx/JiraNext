@@ -255,6 +255,50 @@ export default function SettingsPanel() {
                     </div>
                   </div>
 
+                  {/* Download Settings */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-medium">Configurações de Download</h3>
+                    
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label>Download Automático</Label>
+                        <p className="text-sm text-gray-500">Baixar automaticamente quando extrações terminarem</p>
+                      </div>
+                      <Switch
+                        checked={formData.autoDownload ?? true}
+                        onCheckedChange={(checked) => 
+                          setFormData({...formData, autoDownload: checked})
+                        }
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label>Mostrar Progresso de Download</Label>
+                        <p className="text-sm text-gray-500">Exibir barra de progresso durante downloads</p>
+                      </div>
+                      <Switch
+                        checked={formData.showDownloadProgress ?? true}
+                        onCheckedChange={(checked) => 
+                          setFormData({...formData, showDownloadProgress: checked})
+                        }
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label>Notificar Download Concluído</Label>
+                        <p className="text-sm text-gray-500">Enviar notificação quando download terminar</p>
+                      </div>
+                      <Switch
+                        checked={formData.notifyDownloadComplete ?? false}
+                        onCheckedChange={(checked) => 
+                          setFormData({...formData, notifyDownloadComplete: checked})
+                        }
+                      />
+                    </div>
+                  </div>
+
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <Label>Modo Demonstração</Label>

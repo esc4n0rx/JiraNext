@@ -1,8 +1,8 @@
-// app/layout.tsx
 import { DashboardProvider } from '@/contexts/DashboardContext'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
-import { ConfigProvider } from '@/hooks/use-config' // Apenas seu provider existente
+import { ConfigProvider } from '@/hooks/use-config' 
+
 import './globals.css'
 
 export const metadata = {
@@ -27,17 +27,7 @@ export default function RootLayout({
           <ConfigProvider>
             <DashboardProvider>
               {children}
-              <Toaster 
-                richColors 
-                position="top-center" 
-                toastOptions={{
-                  style: {
-                    background: 'var(--background)',
-                    color: 'var(--foreground)',
-                    border: '1px solid var(--border)',
-                  },
-                }}
-              />
+              <Toaster/>
             </DashboardProvider>
           </ConfigProvider>
         </ThemeProvider>

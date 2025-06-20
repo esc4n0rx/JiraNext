@@ -6,6 +6,9 @@ import type React from 'react'
 import { toast } from 'sonner'
 
 type Config = {
+  notifyDownloadComplete: boolean
+  showDownloadProgress: boolean
+  autoDownload: boolean
   jiraToken: string
   jiraDomain: string
   jiraEmail: string
@@ -29,6 +32,9 @@ const defaultConfig: Config = {
   jiraApiPath: "/rest/api/3/search",
   notifications: true,
   useMockData: false,
+  notifyDownloadComplete: false,
+  showDownloadProgress: false,
+  autoDownload: false
 }
 
 const ConfigContext = createContext<ConfigContextType>({
@@ -57,7 +63,10 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
           jiraEmail: data.jira_email || '',
           jiraApiPath: data.jira_api_path || '/rest/api/3/search',
           notifications: data.notifications !== false,
-          useMockData: data.use_mock_data === true
+          useMockData: data.use_mock_data === true,
+          notifyDownloadComplete: data.notify_download_complete ?? false,
+          showDownloadProgress: data.show_download_progress ?? false,
+          autoDownload: data.auto_download ?? false
         })
       } else {
         console.error('Erro ao carregar configurações')
@@ -95,7 +104,10 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
           jiraEmail: data.config.jira_email || '',
           jiraApiPath: data.config.jira_api_path || '/rest/api/3/search',
           notifications: data.config.notifications !== false,
-          useMockData: data.config.use_mock_data === true
+          useMockData: data.config.use_mock_data === true,
+          notifyDownloadComplete: data.config.notify_download_complete ?? false,
+          showDownloadProgress: data.config.show_download_progress ?? false,
+          autoDownload: data.config.auto_download ?? false
         })
         toast.success('Configurações salvas com sucesso!')
       } else {

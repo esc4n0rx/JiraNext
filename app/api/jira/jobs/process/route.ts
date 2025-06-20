@@ -5,7 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin'
 import { processJiraIssue, reorganizeData, processAvariasIssue, processQualidadeIssue, processDevolucoesIssue } from '@/lib/jira-utils'
 import { JiraIssue } from '@/types/jira'
 
-export const maxDuration = 300 // 5 minutos para Vercel Pro
+export const maxDuration = 60 // Ajustado para o limite do plano hobby
 
 async function processJiraJob(job: JobData): Promise<any> {
   const { type, data } = job
@@ -64,11 +64,11 @@ async function processJiraJob(job: JobData): Promise<any> {
 
     await jobQueue.updateProgress(jobId, 10, 'Executando consulta JQL...')
 
-    // Buscar dados do Jira com paginação
+    // Buscar dados do Jira com paginação otimizada para tempo limitado
     const searchUrl = `${configuration.jira_domain}/rest/api/2/search`
     const allIssues: JiraIssue[] = []
     let startAt = 0
-    const maxResults = 100
+    const maxResults = 100 // Mantido para eficiência
     let totalIssues = 0
 
     // Primeira requisição para obter o total
@@ -93,11 +93,14 @@ async function processJiraJob(job: JobData): Promise<any> {
     allIssues.push(...firstData.issues)
 
     const totalPages = Math.ceil(totalIssues / maxResults)
+    
+    // Limitação para processamento dentro do tempo permitido
+    const maxPagesToProcess = Math.min(totalPages, 20) // Máximo 20 páginas (2000 issues)
+    
+    await jobQueue.updateProgress(jobId, 20, `Encontradas ${totalIssues} issues. Processando até ${maxPagesToProcess * maxResults} registros...`)
 
-    await jobQueue.updateProgress(jobId, 20, `Encontradas ${totalIssues} issues. Carregando dados...`)
-
-    // Buscar páginas restantes
-    for (let page = 1; page < totalPages; page++) {
+    // Buscar páginas restantes com limite
+    for (let page = 1; page < maxPagesToProcess; page++) {
       startAt = page * maxResults
 
       try {
@@ -118,12 +121,12 @@ async function processJiraJob(job: JobData): Promise<any> {
         }
 
         // Atualizar progresso (20% a 60%)
-        const pageProgress = 20 + ((page / totalPages) * 40)
-        await jobQueue.updateProgress(jobId, Math.round(pageProgress), `Carregando página ${page + 1}/${totalPages}...`)
+        const pageProgress = 20 + ((page / maxPagesToProcess) * 40)
+        await jobQueue.updateProgress(jobId, Math.round(pageProgress), `Carregando página ${page + 1}/${maxPagesToProcess}...`)
 
-        // Delay para evitar rate limiting
-        if (page % 10 === 0) {
-          await new Promise(resolve => setTimeout(resolve, 1000))
+        // Delay reduzido para otimização de tempo
+        if (page % 20 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 500))
         }
 
       } catch (pageError) {
@@ -182,7 +185,7 @@ async function processJiraJob(job: JobData): Promise<any> {
 
     const extractionId = extraction.id
 
-    // Salvar dados processados
+    // Salvar dados processados com lotes maiores para otimização
     if (processedData.length > 0) {
       let dataToInsert: any[] = []
 
@@ -245,8 +248,8 @@ async function processJiraJob(job: JobData): Promise<any> {
           break
       }
 
-      // Inserir em lotes
-      const batchSize = 50
+      // Inserir em lotes maiores para otimização
+      const batchSize = 100 // Aumentado de 50 para 100
       for (let i = 0; i < dataToInsert.length; i += batchSize) {
         const batch = dataToInsert.slice(i, i + batchSize)
         
@@ -270,7 +273,8 @@ async function processJiraJob(job: JobData): Promise<any> {
       processedRecords: processedData.length,
       extractionId,
       downloadUrl: getDownloadUrl(type, extractionId),
-      fileName: `${type}_jira_${extractionId}.xlsx`
+      fileName: `${type}_jira_${extractionId}.xlsx`,
+      limitedProcessing: totalPages > 20 ? `Processados ${maxPagesToProcess * maxResults} de ${totalIssues} registros devido ao limite de tempo` : null
     }
 
   } catch (error) {
